@@ -165,7 +165,7 @@ description: "Task list for the Firebase Hybrid AI Tutor (feature 010)"
 - [X] T066 [P] Settings row "Offline tutor: Ready / Downloading / Not supported on this phone" in `lib/features/settings/presentation/settings_screen.dart`, from `OnDeviceModelService`; l10n
 - [ ] T067 [P] Lower the AI Logic per-user quota to 30 RPM in the Cloud console (owner) — research.md R3
 - [ ] T068 Latency check SC-004; if over budget, first set `thinking_budget` 0 for every purpose and the lite model for `progress`; record in research.md R14
-- [ ] T069 [P] Update `docs/` or `specs/010-firebase-hybrid-ai/quickstart.md` with anything that differed in reality (actual model ids, App Check result, API names found by VERIFY steps)
+- [X] T069 [P] Update `docs/` or `specs/010-firebase-hybrid-ai/quickstart.md` with anything that differed in reality (actual model ids, App Check result, API names found by VERIFY steps)
 - [ ] T070 Owner approves the constitution 5.0.0 amendment from T005; record approval in its Sync Impact Report
 - [ ] T071 Final: relay green, app green, `git diff main -- worker/wrangler.jsonc` shows only the firebase env, Cloudflare shows no new deploys of `dry-run-tutor` or the PayPal worker (SC-006)
 
