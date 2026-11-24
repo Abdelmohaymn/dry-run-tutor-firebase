@@ -108,3 +108,29 @@ deployment since 2026-11-23.
 
 Hand README to someone who hasn't seen the project; time them from opening it
 to an installed APK and naming where each model runs. Target < 5 minutes.
+
+## Implementation notes (what differed from the plan)
+
+- **On-device API, verified against the beta08 AAR.** The Kotlin names are
+  `FirebaseAIOnDevice.checkStatus()` / `.download()` (package
+  `com.google.firebase.ai.ondevice`), `OnDeviceConfig(mode = InferenceMode.ONLY_ON_DEVICE, …)`
+  and `Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(modelName, onDeviceConfig = …)`
+  (package `com.google.firebase.ai`), opt-in `PublicPreviewAPI`. The response carries
+  `inferenceSource` (`ON_DEVICE` / `IN_CLOUD`); the channel refuses anything but on-device. The SDK
+  exposes no error code for BUSY / BACKGROUND_USE_BLOCKED, so the channel maps them from the
+  exception text. Not yet run on a Nano phone (T057, T061).
+- **Model ids** are config, not code. The README and `worker/README.md` carry the seed command; the
+  harness defaults are `gemini-3.8-flash` (flash) and `gemini-3.5-flash-lite` (lite) and are
+  overridable with `GEMINI_MODEL_FLASH` / `GEMINI_MODEL_LITE`. Confirm them in the console (R3).
+- **Practice problem** (`vp-0000`): no condense and no progress call, cap `trial.practice_turn_cap`
+  on `device_day`, as v1's walkthrough.
+- **Kept on purpose.** `worker/src/lib/chat-core.ts` stays: `test/unit/turn-pipeline.test.ts` builds the
+  v1 prompt with it and asserts the v2 tutor call is byte-for-byte the same. The provider-key UI
+  (`features/keys`) and `RelayClient.chat` (key check) stay, unreachable: every route to them redirects
+  to today's problem (`noKeysGuard`).
+- **Offline fallback triggers**: a transport failure (first or later POST), or the required `tutor`
+  call answered `rate_limited` / `unavailable`. `appCheck` never falls back. Offline rows are
+  `messages.origin = offline` (Drift v8); they are left out of the request history and the judge, and
+  quoted once as `offline_note` on the next online turn.
+- **Debug only**: Settings → *Simulate cloud rate limit* (`kDebugMode`) makes the `tutor` call answer
+  `rate_limited` so US3 can be tried without exhausting a quota.

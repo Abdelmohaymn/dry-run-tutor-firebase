@@ -153,8 +153,8 @@ description: "Task list for the Firebase Hybrid AI Tutor (feature 010)"
 
 **Independent test**: quickstart.md §6, §8.
 
-- [ ] T062 [P] [US4] README.md: add "How it uses Firebase AI Logic" near the top — a 3-row table (cloud Gemini: tutor replies, progress/evidence checks, judge, transcript repair — called from the app via `firebase_ai`, App Check on; Gemini Nano on device: the offline tutor via `firebase-ai-ondevice` `ONLY_ON_DEVICE`; relay: prompts, ground truth, cap, leak filter, judge post-processing, no model key), a one-paragraph diagram of the step protocol, "See the offline tutor" steps (supported phones, airplane mode, label), "On a phone without Gemini Nano you will see …", install steps for the release APK, emulator/root caveat (App Check). Remove Nebius-specific copy. Keep it skimmable
-- [ ] T063 [P] [US4] Confirm `LICENSE` is MIT with the owner's name and year 2026
+- [X] T062 [P] [US4] README.md: add "How it uses Firebase AI Logic" near the top — a 3-row table (cloud Gemini: tutor replies, progress/evidence checks, judge, transcript repair — called from the app via `firebase_ai`, App Check on; Gemini Nano on device: the offline tutor via `firebase-ai-ondevice` `ONLY_ON_DEVICE`; relay: prompts, ground truth, cap, leak filter, judge post-processing, no model key), a one-paragraph diagram of the step protocol, "See the offline tutor" steps (supported phones, airplane mode, label), "On a phone without Gemini Nano you will see …", install steps for the release APK, emulator/root caveat (App Check). Remove Nebius-specific copy. Keep it skimmable
+- [X] T063 [P] [US4] Confirm `LICENSE` is MIT with the owner's name and year 2026
 - [ ] T064 [US4] Signed release APK: `fvm flutter build apk --release`; quickstart.md §6 on two phones; flip App Check enforcement to Enforced only if it passes (owner, console); otherwise leave Monitoring and say so in README
 - [ ] T065 [US4] Owner says "submitting" → create public repo `dry-run-tutor-firebase` (remote `firebase`), push `firebase-main` as `main` there, attach the APK to a GitHub release, link it from README. Not before
 

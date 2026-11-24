@@ -11,85 +11,94 @@ There is **no code entry, no multiple choice, and no tap-to-answer control anywh
 product** — one content type, spoken. That constraint is the product, not an omission; see
 Principle I in `.specify/memory/constitution.md`.
 
-Built for the **Nebius x NVIDIA Global AI Hackathon**. Every LLM call runs on
-**Nebius Token Factory**, with **NVIDIA Nemotron** (`nvidia/nemotron-3-super-120b-a12b`) as the
-tutor and the judge.
+Built for the **Firebase #BuildHybridAI** hackathon. Every model call is made **from the app
+through Firebase AI Logic**: cloud Gemini when online, and **Gemini Nano on the phone** when the
+phone is offline or the cloud model is rate-limited.
 
 ## For judges
 
 | | |
 |---|---|
-| Android APK | [Latest release](https://github.com/Abdelmohaymn/dry-run-tutor/releases/latest) |
-| Demo video | [Watch on Vimeo](https://vimeo.com/1235297818) (under 3 min) |
+| Android APK | [Latest release](https://github.com/Abdelmohaymn/dry-run-tutor-firebase/releases/latest) |
+| Demo video | Linked from the submission |
 
-Android phones only, internet required. **No API key, account or payment needed**, and no daily
-limit: you can redo a problem or pick another as often as you like.
+Android phones only. **No API key, account or payment needed**, and no daily limit: you can redo a
+problem or pick another as often as you like. Install the APK (allow installs from unknown
+sources when Android asks), skip or finish the short welcome walkthrough, tap the mic and talk
+through your approach (English). When you are done, tap **End session**, then **Finish**, for
+your assessment ("How it went") and the full write-up.
 
-1. Install the APK (allow installs from unknown sources when Android asks).
-2. Open the app and skip or finish the short welcome walkthrough.
-3. Tap the mic and talk through your approach (English).
-4. Answer the tutor. When you are done, tap **End session**, then **Finish**, for your
-   assessment ("How it went") and the full write-up.
-5. Tap **Practice this problem again** to redo it, or **Choose a problem** to try another.
+### See the offline tutor
 
-Optional: add your own Nebius Token Factory key under Settings → **Provider key** to use your own
-credit instead of the shared free one.
+1. Open a problem and have one normal turn, so the model download can start (it needs Wi-Fi or
+   mobile data once; Settings → **Offline tutor** says **Ready** when it is on the phone).
+2. Turn on **airplane mode** and say another turn.
+3. The reply is labelled **Offline tutor**. It asks one question about your approach, never says
+   "correct", and does not count towards your turn limit or your assessment.
 
-## How it uses Nebius Token Factory
+**On a phone without Gemini Nano** Settings shows *Offline tutor: Not supported on this phone*,
+and offline turns behave as they always did: your words are kept and sent when you are back
+online. Nano needs a supported phone (Pixel 9 and later, recent Galaxy S and a few others, Android
+8+ with AICore).
 
-The app never calls a model provider directly. It talks only to a Cloudflare Worker relay, which
-holds the private half of each problem (reference approaches, key insights, hints) and calls
-Token Factory (`https://api.tokenfactory.nebius.com/v1`).
+**Emulators and rooted phones**: App Check (Play Integrity) cannot vouch for them, so the app
+says *"This build can't reach the tutor."* Use a real, unmodified phone.
 
-| Step | Model | What it does |
+## How it uses Firebase AI Logic
+
+| Where | Model | What it does |
 |---|---|---|
-| Tutor | Nemotron 3 Super 120B | Streams each reply, steered by the problem's ground truth. A leak filter checks every draft against the problem's forbidden terms before it is sent |
-| Progress check | Nemotron 3 Super 120B | After each turn, records which key insights the learner has stated, with the quote, so the tutor does not re-ask settled points |
-| Judge | Nemotron 3 Super 120B | Structured verdict against the ground truth: insights reached (alone or "with a nudge"), approach, complexity. Each credit cites the learner's own words |
-| Evidence check | Nemotron 3 Super 120B | Drops any judge credit whose quote the learner did not actually say |
-| Condense | Nemotron 3 Super 120B | Shortens long conversation history to keep turns within budget |
-| Transcript repair | Llama 3.3 70B Instruct | Fixes speech-to-text errors in technical terms ("hash mop" → "hash map") |
+| Cloud, called from the app with `firebase_ai`, App Check on | Gemini (Flash for the tutor, rewrite and judge; Flash-Lite for the checks) | Tutor replies, the progress and evidence checks, the judge, condensing long history, transcript repair |
+| On the phone, `firebase-ai-ondevice`, `ONLY_ON_DEVICE` | Gemini Nano | The offline tutor: one short question about your approach, from the public problem statement only. It has no answer to leak and gives no verdict |
+| The relay (Cloudflare Worker) | none | Holds the prompts and each problem's private half, enforces the turn cap, filters leaks, post-processes the judge. It holds no model key and calls no model |
 
-Nemotron's reasoning stays on for the tutor stream and is turned off for structured calls (judge,
-finish check), where it was leaving empty assessments.
+**How a turn works.** The relay still runs the whole tutor and judge pipeline, but it cannot call
+a model. When it needs one it answers `status: model` with the calls it wants made; the app runs
+them through Firebase AI Logic and posts the same request again with the answers. The relay
+re-runs, checks the draft (leak filter, one rewrite if a forbidden word slipped in) and either
+asks again or returns the finished reply. It keeps no state between steps and writes to its
+database only on the last one (`specs/010-firebase-hybrid-ai/contracts/relay-steps.md`).
 
-Speech-to-text runs on **Groq Whisper** (`whisper-large-v3-turbo`), because Token Factory had
-no speech-to-text model when this was built. When the daily voice quota runs out, the phone's
-own speech recognition takes over.
+**What changed from the original design, said plainly.** A problem's private half used to stay on
+the server. To let the app call Firebase AI Logic itself, ground truth now reaches the app inside
+a model call's instructions, one call at a time, held in memory only: never stored, logged or
+bundled in the APK, and never shown to you (you see only the relay's checked reply). And "there
+is no offline tutor" no longer holds on phones that support Gemini Nano. Both are recorded as
+constitution amendment 5.0.0 (`.specify/memory/constitution.md`).
+
+Speech-to-text runs on **Groq Whisper** (`whisper-large-v3-turbo`); when the daily voice quota
+runs out, the phone's own speech recognition takes over.
 
 ## Architecture
 
 ```
-Android app (Flutter)  ──HTTPS──▶  Cloudflare Worker relay  ──▶  Nebius Token Factory (LLMs)
-  transcripts, sessions,            problems (private half),  └──▶  Groq Whisper (speech-to-text)
-  streak: on the phone only         D1: usage caps only
+Android app (Flutter) ──HTTPS──▶ Cloudflare Worker relay   (prompts, ground truth, turn cap,
+  │  transcripts, sessions,                                  leak filter, judge post-processing)
+  │  streak: on the phone only
+  ├── firebase_ai + App Check ──▶ Gemini (cloud)           runs the model calls the relay asks for
+  └── Kotlin channel ──────────▶ Gemini Nano (on device)   offline tutor, public statement only
 ```
 
-- **Learner data stays on the phone** (SQLite via Drift). The relay's D1 database holds only
-  what enforces usage caps; transcripts, audio and keys are never stored.
-- **A problem's private half never reaches the phone.** The app receives only the statement,
-  examples and glossary.
-- **Free path**: a shared operator key with a daily token budget. **Keyed path**: the learner's
-  own Nebius key, sent per request and never stored.
+- **Learner data stays on the phone** (SQLite via Drift). The relay's D1 database holds only what
+  enforces usage caps; transcripts, audio and keys are never stored.
+- **Firebase Analytics is off** (collection is disabled in the manifest). App Check is on for every
+  AI Logic call.
+- **No keys anywhere**: the app has no provider-key entry, and neither the app nor the relay holds
+  a model key.
 
-## Built during the hackathon
+## Built for this hackathon
 
-The first commit is a snapshot of Dry Run, an Android app that already existed before this repo,
-with private material removed: the full problem library, release signing and store tooling,
-internal planning docs and the landing site. **Every commit after the first is new work**,
-including:
+Branch `firebase-main` is a Firebase entry built on an existing Android app. The new work, in
+order of `git log`:
 
-- Cloud speech-to-text on Groq Whisper, with a per-device daily cap and on-device fallback
-- Problem picker and "Practice this problem again", so judges have no daily limit
-- Judge that quotes the learner, plus a separate evidence check of those quotes
-- Progress check that tracks settled insights from turn 1, and credits ideas accepted from the
-  tutor as "with a nudge"
-- Tutor prompt v8 and v9: answers the learner's questions, no leading questions, agreement is not
-  credit
-- Transcript repair on the free path, metered against the free budget
-- A regression harness of real tutor and judge transcripts (`worker/test/harness/`)
-
-`git log` shows the full history.
+- The step protocol and its three routes (`/v2/turn`, `/v2/judge`, `/v2/repair`), with the old
+  model routes removed
+- Firebase AI Logic from the app (`lib/core/ai/`), App Check, and a loop that runs the relay's
+  model calls
+- The on-device tutor (`android/.../OnDeviceModelChannel.kt`, `lib/features/chat/data/offline_*`),
+  its label, its download, and the fall-back when the cloud is rate-limited
+- A live regression harness that drives the whole step loop against Gemini
+  (`cd worker && GEMINI_API_KEY=… npm run test:harness:gemini`)
 
 ## Layout
 
@@ -105,20 +114,22 @@ including:
 ## Running it
 
 ```bash
-flutter pub get
-flutter run
+fvm flutter pub get
+fvm flutter run
 ```
 
 One app (`app.dryrun.tutor`), one relay: `lib/core/config/relay.dart` holds the deployed worker URL.
-Pass `--dart-define=RELAY_BASE_URL=https://...` to point a build at another worker.
+Pass `--dart-define=RELAY_BASE_URL=https://...` to point a build at another worker. Use `fvm flutter`
+(Flutter 3.44.1, pinned in `.fvmrc`). Debug builds need an App Check debug token:
+`--dart-define=APP_CHECK_DEBUG_TOKEN=...` (register it in the Firebase console; never commit it).
 `lib/core/config/brand.dart` holds the product name and every identifier derived from it.
 Release builds use `android/key.properties` if present, otherwise the debug key.
 
 ## Tests
 
 ```bash
-flutter analyze                 # zero issues is the bar
-flutter test
+fvm flutter analyze             # zero issues is the bar
+fvm flutter test
 cd worker && npm test
 ```
 
@@ -127,21 +138,13 @@ than the library:
 
 ```bash
 mkdir -p /tmp/shim && ln -sfn /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 /tmp/shim/libsqlite3.so
-LD_LIBRARY_PATH=/tmp/shim flutter test
+LD_LIBRARY_PATH=/tmp/shim fvm flutter test
 ```
 
 ## Deploying the relay
 
-```bash
-cd worker
-npm run build:content
-npx wrangler deploy --env dev
-```
-
-Content changes do nothing on a device until the worker redeploys. `runtime_config`'s
-`content_manifest_url` must name the worker's own host — the client refuses any other (FR-004),
-and a wrong value strands every install on `/withdrawn`. See `docs/deploy-notes.md` before a
-prod deploy.
+The Firebase relay is its own Worker (`dry-run-tutor-firebase`) with its own database; it never
+shares a deploy target with any other build. See `worker/README.md` → *Firebase relay*.
 
 ## License
 

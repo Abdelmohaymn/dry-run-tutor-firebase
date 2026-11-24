@@ -8,11 +8,11 @@ The tutor & assessment relay (Cloudflare Worker). See `specs/001-proxy-content-c
 cd worker
 npm install
 npm run build:content                              # content/problems/*.json -> src/generated/*
-npx wrangler d1 migrations apply dry-run-dev --local --env dev
+npx wrangler d1 migrations apply dry-run-tutor-firebase --local --env firebase
 npm run dev                                         # picks up worker/.dev.vars — http://localhost:8787
 ```
 
-`worker/.dev.vars` is committed with **placeholder** values only (`INSTALL_HMAC_SECRET`, `TRIAL_KEY_GROQ`) — enough for `npm test` (provider stubbed) but not for a real call. For a live `wrangler dev` session against a real provider, put your own values in an env-suffixed override instead of editing the tracked file: `worker/.dev.vars.dev` (gitignored), same `KEY="value"` shape, then run `wrangler dev --env dev` so it's picked up. Never commit a real key.
+`worker/.dev.vars` is committed with **placeholder** values only (`INSTALL_HMAC_SECRET`, `STT_KEY_GROQ`) — enough for `npm test`. For a live `wrangler dev` session, put your own values in an env-suffixed override instead of editing the tracked file: `worker/.dev.vars.firebase` (gitignored), same `KEY="value"` shape, then run `wrangler dev --env firebase` so it's picked up. Never commit a real key.
 
 Offline checks (no key, no network — the gate that runs on every PR):
 
@@ -25,7 +25,7 @@ npm test              # unit + contract, provider stubbed
 
 Adding a problem: follow `content/AUTHORING.md`, and run `npm run check:content` (validate, verify examples, build).
 
-`npm run test:harness` additionally needs a real `GROQ_API_KEY` and the full three-problem content set; see `specs/001-proxy-content-contract/quickstart.md` §7.
+`npm run test:harness:gemini` additionally needs a real `GEMINI_API_KEY` (an AI Studio key) and the full content set; it drives `/v2/turn` and `/v2/judge` and answers each model call with Gemini, as the app would.
 
 ## Replaying a tutor turn (`npm run replay:tutor`)
 
@@ -46,11 +46,11 @@ The file is a JSON array of `{"role": "user" | "tutor", "text"}` turns ending on
 Every lever lives in the single `config` row (`contracts/config.schema.json`). Read the current payload, edit the JSON, write it back:
 
 ```sh
-npx wrangler d1 execute dry-run-dev --local \
+npx wrangler d1 execute dry-run-tutor-firebase --local \
   --command "SELECT payload FROM config WHERE id = 1"
 
 # edit the JSON, then:
-npx wrangler d1 execute dry-run-dev --local \
+npx wrangler d1 execute dry-run-tutor-firebase --local \
   --command "UPDATE config SET payload = '<edited JSON>', updated_at = datetime('now') WHERE id = 1"
 ```
 
@@ -92,18 +92,18 @@ Voice ships dormant: a config row without a `voice` block means `POST /v1/stt` a
 Turn voice on (300 seconds per device per UTC day, 120 seconds per clip):
 
 ```sh
-npx wrangler d1 execute dry-run-dev --env dev --remote \
+npx wrangler d1 execute dry-run-tutor-firebase --env firebase --remote \
   --command "UPDATE config SET payload = json_set(payload, '\$.voice', json('{\"enabled\":true,\"seconds_per_device\":300,\"max_clip_seconds\":120}')), updated_at = datetime('now') WHERE id = 1"
 ```
 
 Kill switch. Every device falls back to on-device recognition on its next tap, with no release:
 
 ```sh
-npx wrangler d1 execute dry-run-dev --env dev --remote \
+npx wrangler d1 execute dry-run-tutor-firebase --env firebase --remote \
   --command "UPDATE config SET payload = json_set(payload, '\$.voice.enabled', json('false')), updated_at = datetime('now') WHERE id = 1"
 ```
 
-Use `dry-run-prod` and `--env prod` for production, and enable the lever last, once the app release that uses it is live.
+Use Enable the lever last, once the app release that uses it is live.
 
 ## The daily pointer (`rotation`)
 
@@ -148,11 +148,24 @@ Back on: `json('true')`. Installs pick it up on their next launch.
 - **Switching ads off never costs a learner anything.** The hint still arrives when the rewarded video is skipped (FR-004); the assessment opens without the interstitial (FR-009).
 - **Mid-session changes wait.** The flag is re-read on every check rather than captured at startup, but a learner already inside a session keeps the surfaces that session started with.
 
-## Two-environment deploy
+## Firebase relay
+
+This branch deploys one environment, `firebase` (`name: dry-run-tutor-firebase`, D1 `dry-run-tutor-firebase`). The relay holds no model key and calls no model: `/v2/turn`, `/v2/judge` and `/v2/repair` return the model calls the app must make (`specs/010-firebase-hybrid-ai/contracts/relay-steps.md`). Secrets: `INSTALL_HMAC_SECRET` and `STT_KEY_GROQ` only. Never run a bare `wrangler deploy` for any other worker from this branch.
 
 ```sh
-npx wrangler deploy --env dev
-npx wrangler deploy --env prod
+cd worker
+npx wrangler d1 create dry-run-tutor-firebase          # paste the id into wrangler.jsonc, env "firebase"
+npx wrangler d1 migrations apply dry-run-tutor-firebase --env firebase --remote
+npx wrangler secret put INSTALL_HMAC_SECRET --env firebase
+npx wrangler secret put STT_KEY_GROQ --env firebase
+npm run build:content
+npx wrangler deploy --env firebase
 ```
 
-Each environment has its own D1 database (`wrangler.jsonc`) and its own secrets (`wrangler secret put INSTALL_HMAC_SECRET --env dev`, one `TRIAL_KEY_*` per enabled pool member, and `STT_KEY_GROQ` for voice — set only via `wrangler secret put STT_KEY_GROQ --env dev`, never in a file).
+Seed the config row once. The `gemini` block is required (no model id is compiled in); `chat`, `trim`, `finish_offer` and the rest keep the defaults of the migrations' seed row. Model ids are the billing-free ones the Firebase console lists under AI Logic (`specs/010-firebase-hybrid-ai/research.md` R3):
+
+```sh
+npx wrangler d1 execute dry-run-tutor-firebase --env firebase --remote --command "UPDATE config SET payload = json_set(payload, '\$.gemini', json('{\"models\":{\"tutor\":\"<flash id>\",\"rewrite\":\"<flash id>\",\"judge\":\"<flash id>\",\"progress\":\"<lite id>\",\"evidence\":\"<lite id>\",\"condense\":\"<lite id>\",\"repair\":\"<lite id>\"},\"thinking_budget\":{\"tutor\":0,\"rewrite\":0,\"judge\":null,\"default\":0},\"timeout_ms\":{\"tutor\":20000,\"judge\":30000,\"default\":12000},\"temperature\":{\"tutor\":0.4,\"rewrite\":0.4,\"default\":0},\"max_output_tokens\":{\"tutor\":400,\"rewrite\":400,\"judge\":2000,\"default\":1000}}')), updated_at = datetime('now') WHERE id = 1"
+```
+
+Model ids, thinking budgets and timeouts are levers: change them in D1 with no redeploy, and the app uses the new values on its next call. `GET /v1/config` never serves the `gemini` block.
