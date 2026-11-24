@@ -1,51 +1,32 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "dry-run-tutor",
+  // Firebase #BuildHybridAI entry: this branch deploys ONLY the `firebase` env.
+  // The top-level name is the firebase worker too, so a bare `wrangler deploy`
+  // can never touch the Nebius (`dry-run-tutor`) or PayPal workers.
+  "name": "dry-run-tutor-firebase",
   // Add "account_id" here if your Cloudflare login sees more than one account.
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
-  // Secrets (never committed): INSTALL_HMAC_SECRET, and one operator credential
-  // per trial pool member, each named by that member's `secret_binding` in
-  // contracts/config.schema.json — TRIAL_KEY_GROQ at minimum. Trial path only,
-  // never the learner-keyed path (FR-025). Also TURNSTILE_SECRET
-  // (feature 007, web-only routes), and STT_KEY_GROQ (operator Groq key for
-  // server-side speech-to-text, feature 008).
+  // Secrets (never committed): INSTALL_HMAC_SECRET, STT_KEY_GROQ (operator Groq
+  // key for server-side speech-to-text) and TURNSTILE_SECRET (web-only routes).
+  // No model key: every Gemini call is made by the app through Firebase AI Logic.
   "ratelimits": [
     { "name": "WEB_EVENT_RL", "namespace_id": "7003", "simple": { "limit": 30, "period": 60 } },
     { "name": "INSTALL_RL", "namespace_id": "7004", "simple": { "limit": 5, "period": 60 } }
   ],
   "env": {
-    "dev": {
-      "name": "dry-run-tutor-dev",
-      "vars": {
-        "ENVIRONMENT": "dev"
-      },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          // Create your own: `npx wrangler d1 create dry-run-tutor-dev`, then
-          // paste the id it prints.
-          "database_name": "dry-run-tutor-dev",
-          "database_id": "00000000-0000-0000-0000-000000000000",
-          "migrations_dir": "migrations"
-        }
-      ],
-      "ratelimits": [
-        { "name": "WEB_EVENT_RL", "namespace_id": "7003", "simple": { "limit": 30, "period": 60 } },
-        { "name": "INSTALL_RL", "namespace_id": "7004", "simple": { "limit": 5, "period": 60 } }
-      ]
-    },
-    "prod": {
-      "name": "dry-run-tutor",
+    "firebase": {
+      "name": "dry-run-tutor-firebase",
       "vars": {
         "ENVIRONMENT": "prod"
       },
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "dry-run-tutor",
-          "database_id": "32d250f0-a163-4051-b93d-b18f72904238",
+          // Owner pastes the id from `npx wrangler d1 create dry-run-tutor-firebase`.
+          "database_name": "dry-run-tutor-firebase",
+          "database_id": "00000000-0000-0000-0000-000000000000",
           "migrations_dir": "migrations"
         }
       ],

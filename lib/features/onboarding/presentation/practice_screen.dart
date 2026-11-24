@@ -402,6 +402,14 @@ class _PracticeScreenState extends State<PracticeScreen> {
               _session = session.copyWith(counters: counters);
               _turns = counters.turnIndex;
             });
+          case TurnEventOfflineReply(:final String text):
+            // The on-device tutor answered: shown like any reply, counters untouched.
+            setState(() {
+              _thinking = false;
+              _lines.add(_Line.tutor(text));
+              tutorIndex = _lines.length - 1;
+            });
+            _scrollToEnd();
         }
       }
     } catch (error) {

@@ -14,7 +14,7 @@ const problemIdSchema = z.string().regex(/^vp-\d{4}$/);
 
 // The bare object, kept un-refined so `trialRequestSchema` below can still
 // `.extend({ mode })` it — `.superRefine()` returns a wrapper that cannot.
-const chatRequestObject = z
+export const chatRequestObject = z
   .object({
     problem_id: problemIdSchema,
     messages: z.array(turnSchema).max(40),
@@ -42,7 +42,7 @@ const chatRequestObject = z
  * anything* — which is exactly an empty array. Enforcing `.min(1)` for
  * both collapsed those two cases and made every pre-turn hint a 400.
  */
-function requireMessagesUnlessHint(
+export function requireMessagesUnlessHint(
   value: { messages: readonly unknown[]; hint_requested: boolean },
   ctx: z.RefinementCtx,
 ): void {
@@ -94,16 +94,39 @@ export const sessionResetRequestSchema = z
 
 export type SessionResetRequest = z.infer<typeof sessionResetRequestSchema>;
 
-// oneOf ChatRequest+{mode:"chat"} / JudgeRequest+{mode:"judge"}.
-export const trialRequestSchema = z
-  .discriminatedUnion("mode", [
-    chatRequestObject.omit({ key_check: true }).extend({ mode: z.literal("chat") }),
-    judgeRequestSchema.extend({ mode: z.literal("judge") }),
-  ])
-  .superRefine((value, ctx) => {
-    if (value.mode === "chat") {
-      requireMessagesUnlessHint(value, ctx);
-    }
-  });
+// ---- Step protocol (contracts/relay-steps.md) ----
 
-export type TrialRequest = z.infer<typeof trialRequestSchema>;
+const ANSWER_ERRORS = ["rate_limited", "unavailable", "timeout", "blocked", "bad_output", "other"] as const;
+
+const answerSchema = z.union([
+  z.object({ text: z.string().max(8000) }).strict(),
+  z.object({ error: z.enum(ANSWER_ERRORS) }).strict(),
+  z
+    .object({ json: z.unknown() })
+    .strict()
+    .refine((v) => "json" in v && JSON.stringify(v.json ?? null).length <= 16 * 1024),
+]);
+
+/** The app's answers, keyed by call id. At most 8 per body (the pipeline never asks for more than 3 at once). */
+export const answersSchema = z
+  .record(z.string().regex(/^c_[0-9a-f]{16}$/), answerSchema)
+  .refine((a) => Object.keys(a).length <= 8)
+  .default({});
+
+export const STEP_BODY_MAX_CHARS = 256 * 1024;
+
+export const turnStepRequestSchema = z
+  .object({
+    // Required for a conversational turn (checked by the route); ignored for a hint pull.
+    turn_key: z.string().min(8).max(64).optional(),
+    request: chatRequestObject
+      .omit({ key_check: true })
+      // Learner-only quotes from offline turns since the last online turn (FR-011a).
+      .extend({ offline_note: z.string().max(600).optional() })
+      .superRefine(requireMessagesUnlessHint),
+    answers: answersSchema,
+  })
+  .strict();
+
+export const judgeStepRequestSchema = z.object({ request: judgeRequestSchema, answers: answersSchema }).strict();
+export const repairStepRequestSchema = z.object({ request: repairRequestSchema, answers: answersSchema }).strict();

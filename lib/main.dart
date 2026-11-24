@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -12,6 +15,7 @@ import 'core/errors/crash_reporter.dart';
 import 'core/queue/outbox_drain_bloc.dart';
 import 'core/router/app_router.dart';
 import 'core/time/trusted_time_source.dart';
+import 'firebase_options.dart';
 import 'features/assessment/domain/assessment_repository.dart';
 import 'features/chat/domain/session_repository.dart';
 import 'features/onboarding/domain/install_repository.dart';
@@ -23,6 +27,7 @@ import 'features/voice/domain/recognition_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _initFirebase();
   await setupLocator();
 
   // The only two places `sl<T>()` may be called: here, and a route's
@@ -111,4 +116,18 @@ Future<void> main() async {
   CrashReporter(navigatorKey: router.routerDelegate.navigatorKey, appVersion: packageInfo.version).install();
 
   runApp(App(router: router));
+}
+
+/// Firebase AI Logic is the model transport on this entry; App Check is what
+/// stops anything but this app calling it. Release builds attest with Play
+/// Integrity. Debug builds use the debug provider, with a registered token
+/// passed as `--dart-define=APP_CHECK_DEBUG_TOKEN=...` (never committed).
+Future<void> _initFirebase() async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  const String debugToken = String.fromEnvironment('APP_CHECK_DEBUG_TOKEN');
+  await FirebaseAppCheck.instance.activate(
+    providerAndroid: kReleaseMode
+        ? const AndroidPlayIntegrityProvider()
+        : AndroidDebugProvider(debugToken: debugToken.isEmpty ? null : debugToken),
+  );
 }

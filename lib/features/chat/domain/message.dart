@@ -15,6 +15,7 @@ class Message extends Equatable {
     required this.delivery,
     this.recognisedDraft,
     this.inputMode,
+    this.origin = MessageOrigin.online,
   });
 
   final String id;
@@ -39,6 +40,9 @@ class Message extends Equatable {
   /// Principle I's own falsification test.
   final InputMode? inputMode;
 
+  /// `offline` for an exchange the on-device tutor answered (feature 010).
+  final MessageOrigin origin;
+
   Message copyWith({Delivery? delivery}) => Message(
         id: id,
         seq: seq,
@@ -48,6 +52,7 @@ class Message extends Equatable {
         delivery: delivery ?? this.delivery,
         recognisedDraft: recognisedDraft,
         inputMode: inputMode,
+        origin: origin,
       );
 
   @override
@@ -60,5 +65,6 @@ class Message extends Equatable {
         delivery,
         recognisedDraft,
         inputMode,
+        origin,
       ];
 }

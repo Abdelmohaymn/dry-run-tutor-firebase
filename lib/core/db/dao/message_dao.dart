@@ -103,6 +103,11 @@ class MessageDao extends DatabaseAccessor<AppDatabase> with _$MessageDaoMixin {
         .write(MessagesCompanion(delivery: Value(delivery)));
   }
 
+  /// Marks a row as part of an exchange the on-device tutor answered.
+  Future<void> markOrigin(String id, MessageOrigin origin) {
+    return (update(messages)..where((t) => t.id.equals(id))).write(MessagesCompanion(origin: Value(origin)));
+  }
+
   /// Folds exactly these rows into the new `summary` a `meta` frame just
   /// returned: the leading `summary_covers` of the turns that request
   /// replayed. Marking everything through the reply instead dropped the

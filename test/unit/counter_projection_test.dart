@@ -8,7 +8,6 @@ import 'package:dry_run/core/db/app_database.dart';
 import 'package:dry_run/core/errors/result.dart';
 import 'package:dry_run/core/models/wire_enums.dart';
 import 'package:dry_run/core/network/dto/chat_dto.dart';
-import 'package:dry_run/core/network/sse_parser.dart';
 import 'package:dry_run/features/chat/data/session_repository_impl.dart';
 import 'package:dry_run/features/daily/data/daily_repository_impl.dart';
 import 'package:dry_run/features/chat/domain/hint_rung.dart';
@@ -23,9 +22,9 @@ import 'package:mocktail/mocktail.dart';
 import '../fakes/fake_config_repository.dart';
 import '../fakes/fake_install_repository.dart';
 import '../fakes/fake_outbox_repository.dart';
-import '../fakes/fake_key_repository.dart';
 import '../fakes/fake_trusted_time_source.dart';
 import '../fakes/mock_relay_client.dart';
+import '../fakes/step_fakes.dart';
 
 void main() {
   late AppDatabase db;
@@ -36,6 +35,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(ChatRequestDto(problemId: 'vp-0001', messages: const []));
+    registerStepFallbacks();
   });
 
   setUp(() async {
@@ -89,11 +89,10 @@ void main() {
         configRepository: configRepository,
         timeSource: timeSource,
       ),
-      configRepository: configRepository,
-      keyRepository: FakeKeyRepository(),
       installRepository: FakeInstallRepository(),
       outboxRepository: FakeOutboxRepository(),
       timeSource: timeSource,
+      stepLoop: fakeStepLoop(),
     );
   });
 
@@ -103,20 +102,15 @@ void main() {
     final Session opened = await repository.openOrResumeToday();
 
     // First turn: turnIndex 0 -> 1.
-    when(() => relayClient.trialChat(installId: any(named: 'installId'), request: any(named: 'request')))
-        .thenAnswer(
-      (_) => Stream<SseFrame>.fromIterable(<SseFrame>[
-        const TokenFrame('Tell me about your approach.'),
-        const MetaFrame(<String, Object?>{
-          'turn_index': 1,
-          'turns_remaining': 9,
-          'hints_revealed': 0,
-          'hints_remaining': 3,
-          'session_ended': null,
-          'leak_blocked': false,
-        }),
-        const DoneFrame(),
-      ]),
+    whenTurnStep(relayClient).thenAnswer(
+      (_) async => doneTurn('Tell me about your approach.', <String, Object?>{
+        'turn_index': 1,
+        'turns_remaining': 9,
+        'hints_revealed': 0,
+        'hints_remaining': 3,
+        'session_ended': null,
+        'leak_blocked': false,
+      }),
     );
 
     ServerCountersSnapshot? afterTurn;
@@ -130,20 +124,15 @@ void main() {
     expect(afterTurn.hintsRevealed, 0);
 
     // A hint pull: turnIndex must stay at 1; hintsRevealed advances.
-    when(() => relayClient.trialChat(installId: any(named: 'installId'), request: any(named: 'request')))
-        .thenAnswer(
-      (_) => Stream<SseFrame>.fromIterable(<SseFrame>[
-        const TokenFrame('Rung 1: think about what you need to look up quickly.'),
-        const MetaFrame(<String, Object?>{
-          'turn_index': 1,
-          'turns_remaining': 9,
-          'hints_revealed': 1,
-          'hints_remaining': 2,
-          'session_ended': null,
-          'leak_blocked': false,
-        }),
-        const DoneFrame(),
-      ]),
+    whenTurnStep(relayClient).thenAnswer(
+      (_) async => doneTurn('Rung 1: think about what you need to look up quickly.', <String, Object?>{
+        'turn_index': 1,
+        'turns_remaining': 9,
+        'hints_revealed': 1,
+        'hints_remaining': 2,
+        'session_ended': null,
+        'leak_blocked': false,
+      }),
     );
 
     final Result<HintRung> hintResult = await repository.pullHint(opened);

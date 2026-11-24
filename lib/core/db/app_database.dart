@@ -71,7 +71,7 @@ class AppDatabase extends _$AppDatabase {
   /// its streak day) is touched by any of them; `test/db/migration_test.dart`
   /// asserts exactly that.
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -123,6 +123,10 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 7 && to >= 7) {
             await m.addColumn(assessments, assessments.insightsAssisted);
+          }
+          // Feature 010: where a message came from. Existing rows are online.
+          if (from < 8 && to >= 8) {
+            await m.addColumn(messages, messages.origin);
           }
         },
       );

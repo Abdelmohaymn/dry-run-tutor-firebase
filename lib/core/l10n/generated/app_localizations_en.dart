@@ -180,6 +180,45 @@ class AppLocalizationsEn extends AppLocalizations {
       'Something failed on our side. Try again, and update the app if it keeps happening.';
 
   @override
+  String get errClientUnverified => 'This build can\'t reach the tutor.';
+
+  @override
+  String get errOfflineTutorDownloading =>
+      'The offline tutor is still downloading — try again soon.';
+
+  @override
+  String get errOfflineTutorBusy =>
+      'The offline tutor is busy — try again in a moment.';
+
+  @override
+  String get offlineTutorFallbackLine =>
+      'Keep going — talk me through your approach step by step.';
+
+  @override
+  String get offlineTutorLabel => 'Offline tutor';
+
+  @override
+  String get offlineTutorYouLabel => 'Offline';
+
+  @override
+  String get settingsOfflineTutorLabel => 'Offline tutor';
+
+  @override
+  String get settingsOfflineTutorReady => 'Ready';
+
+  @override
+  String get settingsOfflineTutorDownloading => 'Downloading';
+
+  @override
+  String get settingsOfflineTutorNotSupported => 'Not supported on this phone';
+
+  @override
+  String get settingsOfflineTutorWillDownload => 'Will download on Wi-Fi';
+
+  @override
+  String get settingsSimulateRateLimitLabel => 'Simulate cloud rate limit';
+
+  @override
   String get errOfflineQueued =>
       'No connection. Try again once you\'re back online.';
 

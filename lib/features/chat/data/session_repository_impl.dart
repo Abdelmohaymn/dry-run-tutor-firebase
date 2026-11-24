@@ -1,28 +1,27 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:uuid/uuid.dart';
 
-import '../../../core/config/remote_config_repository.dart';
-import '../../../core/config/runtime_config.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/db/dao/message_dao.dart';
 import '../../../core/db/dao/session_dao.dart';
 import '../../../core/db/dao/assessment_dao.dart';
 import '../../../core/db/dao/outbox_dao.dart';
 import '../../../core/db/dao/streak_dao.dart';
+import '../../../core/ai/model_gateway.dart' show ModelErrorKind;
+import '../../../core/ai/on_device_model.dart';
+import '../../../core/ai/on_device_model_service.dart';
 import '../../../core/errors/relay_error.dart';
 import '../../../core/errors/result.dart';
 import '../../../core/models/wire_enums.dart';
 import '../../../core/text/example_body.dart';
 import '../../../core/network/dto/chat_dto.dart';
+import '../../../core/network/dto/step_dto.dart';
 import '../../../core/network/dto/turn_dto.dart';
 import '../../../core/network/relay_client.dart';
-import '../../../core/network/sse_parser.dart';
 import '../../../core/queue/outbox_repository.dart';
 import '../../../core/time/trusted_time_source.dart';
 import '../../daily/domain/daily_repository.dart';
 import '../../daily/domain/daily_selection.dart';
-import '../../keys/domain/key_repository.dart';
-import '../../keys/domain/learner_key.dart';
 import '../../onboarding/domain/install_identity.dart';
 import '../../onboarding/domain/install_repository.dart';
 import '../../problem/domain/problem.dart';
@@ -35,6 +34,9 @@ import '../domain/server_counters.dart';
 import '../domain/session.dart';
 import '../domain/session_repository.dart';
 import '../domain/turn_event.dart';
+import 'offline_note.dart';
+import 'offline_tutor.dart';
+import 'step_loop.dart';
 import 'turn_event_mapper.dart';
 
 /// A replayed request never carries more than this many turns (FR-020) —
@@ -52,11 +54,12 @@ class SessionRepositoryImpl implements SessionRepository {
     required StreakDao streakDao,
     required ProblemRepository problemRepository,
     required DailyRepository dailyRepository,
-    required RemoteConfigRepository configRepository,
-    required KeyRepository keyRepository,
     required InstallRepository installRepository,
     required TrustedTimeSource timeSource,
     required OutboxRepository outboxRepository,
+    required StepLoop stepLoop,
+    OfflineTutor? offlineTutor,
+    OnDeviceModelService? onDeviceService,
     Uuid? uuid,
   })  : _relayClient = relayClient,
         _sessionDao = sessionDao,
@@ -66,11 +69,12 @@ class SessionRepositoryImpl implements SessionRepository {
         _streakDao = streakDao,
         _problemRepository = problemRepository,
         _dailyRepository = dailyRepository,
-        _configRepository = configRepository,
-        _keyRepository = keyRepository,
         _installRepository = installRepository,
         _timeSource = timeSource,
         _outboxRepository = outboxRepository,
+        _stepLoop = stepLoop,
+        _offlineTutor = offlineTutor,
+        _onDevice = onDeviceService,
         _uuid = uuid ?? const Uuid();
 
   final RelayClient _relayClient;
@@ -81,9 +85,10 @@ class SessionRepositoryImpl implements SessionRepository {
   final StreakDao _streakDao;
   final ProblemRepository _problemRepository;
   final DailyRepository _dailyRepository;
-  final RemoteConfigRepository _configRepository;
   final OutboxRepository _outboxRepository;
-  final KeyRepository _keyRepository;
+  final StepLoop _stepLoop;
+  final OfflineTutor? _offlineTutor;
+  final OnDeviceModelService? _onDevice;
   final InstallRepository _installRepository;
   final TrustedTimeSource _timeSource;
   final Uuid _uuid;
@@ -107,8 +112,8 @@ class SessionRepositoryImpl implements SessionRepository {
       problem = await _problemRepository.fetchDaily(day, problemId: problemId);
       isRepeat = (await _sessionDao.completedProblemIds()).contains(problem.id);
     }
-    final LearnerKey? key = await _keyRepository.read();
-    final SessionPath path = key == null ? SessionPath.trial : SessionPath.keyed;
+    // FR-015: no learner key on this entry, so every session is the same path.
+    const SessionPath path = SessionPath.trial;
     final DateTime startedAt = (await _timeSource.now()).utc;
     final String id = _uuid.v4();
 
@@ -119,7 +124,6 @@ class SessionRepositoryImpl implements SessionRepository {
         day: day,
         path: path,
         status: SessionStatus.chatting,
-        providerId: Value(key?.providerId),
         isRepeat: Value(isRepeat),
         startedAt: startedAt,
       ),
@@ -131,7 +135,6 @@ class SessionRepositoryImpl implements SessionRepository {
       day: day,
       path: path,
       status: SessionStatus.chatting,
-      providerId: key?.providerId,
       counters: ServerCounters.initial,
       isRepeat: isRepeat,
       disputed: false,
@@ -157,8 +160,7 @@ class SessionRepositoryImpl implements SessionRepository {
       return null;
     }
 
-    final LearnerKey? key = await _keyRepository.read();
-    final SessionPath path = key == null ? SessionPath.trial : SessionPath.keyed;
+    const SessionPath path = SessionPath.trial;
     final DateTime startedAt = (await _timeSource.now()).utc;
     final String id = _uuid.v4();
 
@@ -169,7 +171,6 @@ class SessionRepositoryImpl implements SessionRepository {
         day: day,
         path: path,
         status: SessionStatus.chatting,
-        providerId: Value(key?.providerId),
         isPractice: const Value(true),
         startedAt: startedAt,
       ),
@@ -181,7 +182,6 @@ class SessionRepositoryImpl implements SessionRepository {
       day: day,
       path: path,
       status: SessionStatus.chatting,
-      providerId: key?.providerId,
       counters: ServerCounters.initial,
       isRepeat: false,
       disputed: false,
@@ -224,7 +224,6 @@ class SessionRepositoryImpl implements SessionRepository {
       await _messageDao.markDelivery(retryMessageId, Delivery.sending);
     }
 
-    final StringBuffer tutorText = StringBuffer();
     ChatRequestDto? request;
     try {
       final List<String> replayedIds;
@@ -233,64 +232,129 @@ class SessionRepositoryImpl implements SessionRepository {
         solutionRequestCount: solutionRequestCount,
         finishOfferDismissed: finishOfferDismissed,
       );
-      final (String? userKey, String? providerId) = await _keyedHeaders(session);
+      final Map<String, Object?> requestJson = request.toJson();
 
-      final Stream<SseFrame> frames = session.path == SessionPath.trial
-          ? _relayClient.trialChat(installId: installId, request: request)
-          : _relayClient.chat(
-              installId: installId,
-              request: request,
-              userKey: userKey,
-              providerId: providerId,
-            );
+      // The relay checks the reply; the app only runs the model calls it asks
+      // for (contracts/relay-steps.md). Nothing the loop sees is stored.
+      final Map<String, Object?> done = await _stepLoop.run(
+        (Map<String, Object?> answers) =>
+            _relayClient.turnStep(installId: installId, turnKey: userMessageId, request: requestJson, answers: answers),
+      );
+      final String reply = done['reply'] as String? ?? '';
+      final MetaFrameDto meta = _metaOf(done);
 
-      // The frame-to-event mapping is shared with the web demo
-      // (turn_event_mapper.dart); `summary` rides the same meta frame but
-      // is not part of the event, so it is captured here on the way past.
-      final List<MetaFrameDto> metas = <MetaFrameDto>[];
-      final Stream<SseFrame> tapped = frames.map((SseFrame frame) {
-        if (frame is MetaFrame) {
-          metas.add(MetaFrameDto.fromJson(frame.rawJson));
-        }
-        return frame;
-      });
-      await for (final TurnEvent event in turnEventsFromFrames(tapped)) {
-        switch (event) {
-          case TurnEventToken(:final text):
-            tutorText.write(text);
-            yield event;
-          case TurnEventMeta(:final counters):
-            final MetaFrameDto dto = metas.last;
-            await _messageDao.markDelivery(userMessageId, Delivery.sent);
-            await _persistTurnReply(
-              session: session,
-              tutorText: tutorText.toString(),
-              counters: counters,
-              replayedIds: replayedIds,
-              newSummary: dto.summary,
-              summaryCovers: dto.summaryCovers,
-              solutionRequestCount: solutionRequestCount,
-            );
-            yield event;
+      yield TurnEvent.token(reply);
+      await _messageDao.markDelivery(userMessageId, Delivery.sent);
+      await _persistTurnReply(
+        session: session,
+        tutorText: reply,
+        counters: countersFromMetaDto(meta),
+        replayedIds: replayedIds,
+        newSummary: meta.summary,
+        summaryCovers: meta.summaryCovers,
+        solutionRequestCount: solutionRequestCount,
+      );
+      yield TurnEvent.meta(countersFromMetaDto(meta));
+    } catch (e) {
+      // Offline, or the cloud model is rate-limited: the on-device tutor answers
+      // if it can (data-model.md §A7). It never replaces a reply the relay would
+      // have checked — only a turn that could not be checked at all.
+      if (_mayAnswerOffline(e) && _onDevice?.current == OnDeviceStatus.available && _offlineTutor != null) {
+        final String? offlineText = await _answerOffline(session, userMessageId, text);
+        if (offlineText != null) {
+          yield TurnEvent.offlineReply(offlineText);
+          return;
         }
       }
-    } catch (e) {
+
       await _messageDao.markDelivery(userMessageId, Delivery.failedRetryable);
+      final Object error = e is ModelCallFailed ? e.toRelayException() : e;
       // FR-042: a transport failure — the request never reached the relay
       // at all — is what queues here. A relay-catalogue error (a real
       // response, just not a success) is surfaced to the learner instead
       // (`Failure`'s own copy); it is never queued, because retrying it
       // blindly would fail identically.
-      if (e is RelayException && e.error is TransportFailure && request != null) {
-        await _outboxRepository.enqueue(
-          sessionId: session.id,
-          kind: OutboxKind.chatTurn,
-          payload: <String, Object?>{'user_message_id': userMessageId, 'request': request.toJson()},
-          solutionRequestCountAtEnqueue: session.solutionRequestCount,
-        );
+      if (error is RelayException && error.error is TransportFailure) {
+        if (_onDevice?.current == OnDeviceStatus.downloading) {
+          // Offline with the tutor still arriving: say so, and do not queue a
+          // turn the learner is about to repeat (spec edge case).
+          throw const RelayException(RelayError.offlineTutorDownloading());
+        }
+        if (request != null) {
+          await _outboxRepository.enqueue(
+            sessionId: session.id,
+            kind: OutboxKind.chatTurn,
+            payload: <String, Object?>{'user_message_id': userMessageId, 'request': request.toJson()},
+            solutionRequestCountAtEnqueue: session.solutionRequestCount,
+          );
+        }
       }
+      if (error is RelayException) throw error;
       rethrow;
     }
+  }
+
+  /// Whether [e] is a failure the on-device tutor may answer in place of the
+  /// cloud: the request never reached the relay, or the required tutor call was
+  /// rate-limited or the model unavailable. Never App Check — that is not a
+  /// capacity problem, and an unattested build must not quietly run a different
+  /// tutor (data-model.md §A7).
+  bool _mayAnswerOffline(Object e) {
+    if (e is RelayException) return e.error is TransportFailure;
+    if (e is ModelCallFailed) {
+      return e.purpose == 'tutor' && (e.kind == ModelErrorKind.rateLimited || e.kind == ModelErrorKind.unavailable);
+    }
+    return false;
+  }
+
+  /// One offline exchange: the learner's row and the tutor's reply are both
+  /// stored as `offline`, the learner's marked sent (it was answered), nothing
+  /// queued, no counters touched. Returns the reply, or `null` when the model
+  /// could not answer — the caller then handles the original failure, except a
+  /// rationed model, which is its own message.
+  Future<String?> _answerOffline(Session session, String userMessageId, String text) async {
+    final List<Message> before = <Message>[
+      for (final MessageRow row in await _messageDao.forSession(session.id))
+        if (row.id != userMessageId) _toDomainMessage(row),
+    ];
+    final MessageRow? current = await _messageDao.byId(userMessageId);
+    final List<Message> recent = current == null
+        ? before
+        : before.where((Message m) => m.seq < current.seq).toList(growable: false);
+    final String reply;
+    try {
+      reply = await _offlineTutor!.reply(session.problem, recent, text);
+    } on OnDeviceException catch (e) {
+      switch (e.code) {
+        case OnDeviceErrorCode.notReady:
+          return null;
+        case OnDeviceErrorCode.busy:
+          await _messageDao.markDelivery(userMessageId, Delivery.failedRetryable);
+          throw const RelayException(RelayError.offlineTutorBusy());
+        case OnDeviceErrorCode.background:
+        case OnDeviceErrorCode.failed:
+          await _messageDao.markDelivery(userMessageId, Delivery.failedRetryable);
+          throw const RelayException(RelayError.unclearRetry());
+      }
+    }
+
+    await _messageDao.markOrigin(userMessageId, MessageOrigin.offline);
+    await _messageDao.markDelivery(userMessageId, Delivery.sent);
+    final DateTime now = (await _timeSource.now()).utc;
+    await _messageDao.insertMessage(
+      MessagesCompanion.insert(
+        id: _uuid.v4(),
+        sessionId: session.id,
+        seq: await _messageDao.nextSeq(session.id),
+        role: TurnRole.tutor,
+        body: reply,
+        kind: MessageKind.turn,
+        delivery: Delivery.sent,
+        origin: Value(MessageOrigin.offline),
+        createdAt: now,
+      ),
+    );
+    return reply;
   }
 
   @override
@@ -305,33 +369,17 @@ class SessionRepositoryImpl implements SessionRepository {
       // — this is the request *shape* the relay validates, not extra
       // context the ladder consumes.
       final (ChatRequestDto request, _) = await _buildChatRequest(session, hintRequested: true);
-      final (String? userKey, String? providerId) = await _keyedHeaders(session);
+      final Map<String, Object?> requestJson = request.toJson();
 
-      final Stream<SseFrame> frames = session.path == SessionPath.trial
-          ? _relayClient.trialChat(installId: installId, request: request)
-          : _relayClient.chat(
-              installId: installId,
-              request: request,
-              userKey: userKey,
-              providerId: providerId,
-            );
-
-      String? hintText;
-      ServerCounters? counters;
-      await for (final SseFrame frame in frames) {
-        switch (frame) {
-          case TokenFrame(:final text):
-            hintText = text;
-          case MetaFrame(:final rawJson):
-            counters = _countersFromDto(MetaFrameDto.fromJson(rawJson));
-          case DoneFrame():
-          case ErrorFrame():
-            break;
-        }
-      }
-      if (hintText == null || counters == null) {
+      final Map<String, Object?> done = await _runStepLoop(
+        (Map<String, Object?> answers) =>
+            _relayClient.turnStep(installId: installId, request: requestJson, answers: answers),
+      );
+      final String? hintText = done['reply'] as String?;
+      if (hintText == null) {
         return const Err(RelayError.unclearRetry());
       }
+      final ServerCounters counters = countersFromMetaDto(_metaOf(done));
 
       // The server flattens the authored ladder and returns its own fixed
       // closing line once `hints_revealed` runs past the ladder's length
@@ -360,8 +408,6 @@ class SessionRepositoryImpl implements SessionRepository {
       await _applyCounters(session.id, counters, newSummary: null);
 
       return Ok(HintRung(index: counters.hintsRevealed, text: hintText, exhausted: exhausted));
-    } on MissingMetaFailure {
-      return const Err(RelayError.unclearRetry());
     } on RelayException catch (e) {
       return Err(e.error);
     } catch (_) {
@@ -527,7 +573,10 @@ class SessionRepositoryImpl implements SessionRepository {
     bool? hintRequested,
     bool finishOfferDismissed = false,
   }) async {
-    final List<MessageRow> uncovered = await _messageDao.uncoveredForSession(session.id);
+    // Offline-tutor rows stay in the transcript but are never replayed as history (FR-011a).
+    final List<MessageRow> uncovered = (await _messageDao.uncoveredForSession(session.id))
+        .where((MessageRow m) => m.origin == MessageOrigin.online)
+        .toList(growable: false);
     final List<MessageRow> capped = uncovered.length > _maxReplayedMessages
         ? uncovered.sublist(uncovered.length - _maxReplayedMessages)
         : uncovered;
@@ -546,33 +595,35 @@ class SessionRepositoryImpl implements SessionRepository {
       hintRequested: hintRequested,
       solutionRequestCount: solutionRequestCount,
       finishOfferDismissed: finishOfferDismissed ? true : null,
+      // What the learner said to the offline tutor since the last online turn (FR-011a).
+      offlineNote: hintRequested == true ? null : offlineNote(await _allMessages(session.id)),
     );
     return (request, capped.map((MessageRow m) => m.id).toList());
   }
 
-  Future<(String?, String?)> _keyedHeaders(Session session) async {
-    if (session.path != SessionPath.keyed) {
-      return (null, null);
-    }
-    final LearnerKey? key = await _keyRepository.read();
-    final String? providerId = key?.providerId ?? session.providerId;
+  Future<List<Message>> _allMessages(String sessionId) async => <Message>[
+        for (final MessageRow row in await _messageDao.forSession(sessionId)) _toDomainMessage(row),
+      ];
 
-    // A provider offered when the key was saved can drop out of
-    // `keyed_providers` later (the relay's own choice, research.md
-    // R-005) — sending it anyway is `BAD_REQUEST` on the wire. Caught
-    // here, before the request, and turned into the same re-entry
-    // prompt `InvalidKey` already drives, rather than a doomed request
-    // that reads as the app being broken (contracts/relay-client.md,
-    // T093).
-    final RuntimeConfig config = _configRepository.cached() ?? await _configRepository.load();
-    if (providerId != null && !config.keyedProviders.contains(providerId)) {
-      throw const RelayException(RelayError.invalidKey());
+  /// Runs one relay step loop; a model call that had to stop it comes out as
+  /// the catalogue error the learner-facing surfaces already render.
+  Future<Map<String, Object?>> _runStepLoop(
+    Future<StepResponseDto> Function(Map<String, Object?> answers) post,
+  ) async {
+    try {
+      return await _stepLoop.run(post);
+    } on ModelCallFailed catch (e) {
+      throw e.toRelayException();
     }
-
-    return (key?.value, providerId);
   }
 
-  ServerCounters _countersFromDto(MetaFrameDto dto) => countersFromMetaDto(dto);
+  MetaFrameDto _metaOf(Map<String, Object?> done) {
+    final Object? meta = done['meta'];
+    if (meta is! Map) {
+      throw const RelayException(RelayError.unclearRetry());
+    }
+    return MetaFrameDto.fromJson(Map<String, dynamic>.from(meta));
+  }
 
   /// Inserts the tutor's reply and applies the turn's counters, folding
   /// any newly-covered messages into a fresh `summary` (FR-020).
@@ -648,6 +699,7 @@ class SessionRepositoryImpl implements SessionRepository {
         delivery: row.delivery,
         recognisedDraft: row.recognisedDraft,
         inputMode: row.inputMode,
+        origin: row.origin,
       );
 
   Session _toDomainSession(SessionRow row, Problem problem) => Session(
@@ -656,7 +708,6 @@ class SessionRepositoryImpl implements SessionRepository {
         day: row.day,
         path: row.path,
         status: row.status,
-        providerId: row.providerId,
         counters: ServerCounters(
           turnIndex: row.turnIndex,
           turnsRemaining: row.turnsRemaining ?? 0,

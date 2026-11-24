@@ -8,6 +8,8 @@
 // rendering rather than left unbuilt. The rest is tracked as follow-up in
 // VERIFICATION.md; CI is what confirms these baselines actually match the
 // runner Flutter resolves at PR time, not this sandbox alone.
+import 'package:dry_run/core/ai/on_device_model.dart';
+import 'package:dry_run/core/ai/on_device_model_service.dart';
 import 'package:dry_run/core/router/placeholder_screen.dart';
 import 'package:dry_run/core/update/update_required_screen.dart';
 import 'package:dry_run/features/daily/presentation/withdrawn_screen.dart';
@@ -21,6 +23,7 @@ import 'package:mocktail/mocktail.dart';
 
 import '../fakes/fake_config_repository.dart';
 import '../fakes/fake_install_repository.dart';
+import '../fakes/fake_on_device_model.dart';
 import '../fakes/fake_problem_repository.dart';
 import 'golden_harness.dart';
 
@@ -38,7 +41,12 @@ void main() {
   });
 
   testWidgets('/settings', (WidgetTester tester) async {
-    await tester.pumpWidget(goldenHarness(const SettingsScreen()));
+    final OnDeviceModelService offlineTutor = OnDeviceModelService(
+      model: FakeOnDeviceModel(currentStatus: OnDeviceStatus.unavailable),
+      isOnline: () async => false,
+      observeLifecycle: false,
+    );
+    await tester.pumpWidget(goldenHarness(SettingsScreen(onDeviceService: offlineTutor)));
     await expectLater(find.byType(SettingsScreen), matchesGoldenFile('goldens/settings_screen.png'));
   });
 

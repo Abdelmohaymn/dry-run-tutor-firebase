@@ -1,4 +1,4 @@
-// contracts/error-catalog.md — the closed set of sixteen error codes. Every
+// contracts/error-catalog.md — the closed set of seventeen error codes. Every
 // non-2xx response from every route uses this envelope, and it is routed
 // through redact() first: no provider error body, status line, or stack
 // trace ever reaches the caller (FR-039, SC-011).
@@ -21,6 +21,7 @@ export const ERROR_CODES = [
   "VOICE_UNAVAILABLE",
   "VOICE_EXHAUSTED",
   "VOICE_BUSY",
+  "STEP_DIVERGED",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -113,6 +114,11 @@ const ERROR_TABLE: Record<ErrorCode, ErrorSpec> = {
     status: 503,
     retryable: true,
     message: "Voice transcription hit a temporary problem. Send the same clip again.",
+  },
+  STEP_DIVERGED: {
+    status: 409,
+    retryable: false,
+    message: "The turn changed while it was being answered.",
   },
 };
 

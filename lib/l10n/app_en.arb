@@ -212,6 +212,54 @@
   "@errBadRequest": {
     "description": "BAD_REQUEST. Our fault, said plainly. Never echoes a field from the request."
   },
+  "errClientUnverified": "This build can't reach the tutor.",
+  "@errClientUnverified": {
+    "description": "CLIENT_UNVERIFIED. Firebase App Check would not attest this install, so the model call was refused (feature 010)."
+  },
+  "errOfflineTutorDownloading": "The offline tutor is still downloading — try again soon.",
+  "@errOfflineTutorDownloading": {
+    "description": "Shown when the phone is offline and Gemini Nano is not ready yet (feature 010)."
+  },
+  "errOfflineTutorBusy": "The offline tutor is busy — try again in a moment.",
+  "@errOfflineTutorBusy": {
+    "description": "Shown when the system is rationing the on-device model (feature 010)."
+  },
+  "offlineTutorFallbackLine": "Keep going — talk me through your approach step by step.",
+  "@offlineTutorFallbackLine": {
+    "description": "What the offline tutor says when its own answer was empty, too long, or sounded like a verdict (research.md R11)."
+  },
+  "offlineTutorLabel": "Offline tutor",
+  "@offlineTutorLabel": {
+    "description": "Small caption under a reply the on-device tutor wrote (feature 010, FR-010)."
+  },
+  "offlineTutorYouLabel": "Offline",
+  "@offlineTutorYouLabel": {
+    "description": "Subtle marker on a learner turn the offline tutor answered."
+  },
+  "settingsOfflineTutorLabel": "Offline tutor",
+  "@settingsOfflineTutorLabel": {
+    "description": "Settings row title (feature 010)."
+  },
+  "settingsOfflineTutorReady": "Ready",
+  "@settingsOfflineTutorReady": {
+    "description": "Offline tutor status: the model is on the phone."
+  },
+  "settingsOfflineTutorDownloading": "Downloading",
+  "@settingsOfflineTutorDownloading": {
+    "description": "Offline tutor status: the model is downloading."
+  },
+  "settingsOfflineTutorNotSupported": "Not supported on this phone",
+  "@settingsOfflineTutorNotSupported": {
+    "description": "Offline tutor status: this phone cannot run Gemini Nano."
+  },
+  "settingsOfflineTutorWillDownload": "Will download on Wi-Fi",
+  "@settingsOfflineTutorWillDownload": {
+    "description": "Offline tutor status: supported, the download has not started."
+  },
+  "settingsSimulateRateLimitLabel": "Simulate cloud rate limit",
+  "@settingsSimulateRateLimitLabel": {
+    "description": "Debug-only switch: the cloud tutor call answers rate-limited so the offline fallback can be tested."
+  },
   "errOfflineQueued": "No connection. Try again once you're back online.",
   "@errOfflineQueued": {
     "description": "Client-side transport failure (never reached the relay). A retryable bubble in the conversation, never a lost thought (FR-042)."

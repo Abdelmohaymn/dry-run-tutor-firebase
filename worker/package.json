@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit --project contract",
-    "test:harness": "node -e \"if(!process.env.GROQ_API_KEY){console.error('GROQ_API_KEY is not set — test:harness makes live provider calls and refuses to run without it (quickstart.md §7).');process.exit(1)}\" && vitest run --project harness",
+    "test:harness:gemini": "node -e \"if(!process.env.GEMINI_API_KEY){console.error('GEMINI_API_KEY is not set — test:harness:gemini makes live Gemini calls and refuses to run without it.');process.exit(1)}\" && vitest run --project harness",
     "build:content": "NODE_PATH=./node_modules tsx ../tools/build-content.ts",
     "validate:content": "NODE_PATH=./node_modules tsx ../tools/validate-content.ts",
     "verify:examples": "python3 ../tools/verify-examples.py",

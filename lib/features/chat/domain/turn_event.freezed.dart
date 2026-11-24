@@ -55,12 +55,13 @@ extension TurnEventPatterns on TurnEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( TurnEventToken value)?  token,TResult Function( TurnEventMeta value)?  meta,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( TurnEventToken value)?  token,TResult Function( TurnEventMeta value)?  meta,TResult Function( TurnEventOfflineReply value)?  offlineReply,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case TurnEventToken() when token != null:
 return token(_that);case TurnEventMeta() when meta != null:
-return meta(_that);case _:
+return meta(_that);case TurnEventOfflineReply() when offlineReply != null:
+return offlineReply(_that);case _:
   return orElse();
 
 }
@@ -78,12 +79,13 @@ return meta(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( TurnEventToken value)  token,required TResult Function( TurnEventMeta value)  meta,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( TurnEventToken value)  token,required TResult Function( TurnEventMeta value)  meta,required TResult Function( TurnEventOfflineReply value)  offlineReply,}){
 final _that = this;
 switch (_that) {
 case TurnEventToken():
 return token(_that);case TurnEventMeta():
-return meta(_that);}
+return meta(_that);case TurnEventOfflineReply():
+return offlineReply(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -97,12 +99,13 @@ return meta(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( TurnEventToken value)?  token,TResult? Function( TurnEventMeta value)?  meta,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( TurnEventToken value)?  token,TResult? Function( TurnEventMeta value)?  meta,TResult? Function( TurnEventOfflineReply value)?  offlineReply,}){
 final _that = this;
 switch (_that) {
 case TurnEventToken() when token != null:
 return token(_that);case TurnEventMeta() when meta != null:
-return meta(_that);case _:
+return meta(_that);case TurnEventOfflineReply() when offlineReply != null:
+return offlineReply(_that);case _:
   return null;
 
 }
@@ -119,11 +122,12 @@ return meta(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  token,TResult Function( ServerCounters counters)?  meta,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  token,TResult Function( ServerCounters counters)?  meta,TResult Function( String text)?  offlineReply,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case TurnEventToken() when token != null:
 return token(_that.text);case TurnEventMeta() when meta != null:
-return meta(_that.counters);case _:
+return meta(_that.counters);case TurnEventOfflineReply() when offlineReply != null:
+return offlineReply(_that.text);case _:
   return orElse();
 
 }
@@ -141,11 +145,12 @@ return meta(_that.counters);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  token,required TResult Function( ServerCounters counters)  meta,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  token,required TResult Function( ServerCounters counters)  meta,required TResult Function( String text)  offlineReply,}) {final _that = this;
 switch (_that) {
 case TurnEventToken():
 return token(_that.text);case TurnEventMeta():
-return meta(_that.counters);}
+return meta(_that.counters);case TurnEventOfflineReply():
+return offlineReply(_that.text);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -159,11 +164,12 @@ return meta(_that.counters);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  token,TResult? Function( ServerCounters counters)?  meta,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  token,TResult? Function( ServerCounters counters)?  meta,TResult? Function( String text)?  offlineReply,}) {final _that = this;
 switch (_that) {
 case TurnEventToken() when token != null:
 return token(_that.text);case TurnEventMeta() when meta != null:
-return meta(_that.counters);case _:
+return meta(_that.counters);case TurnEventOfflineReply() when offlineReply != null:
+return offlineReply(_that.text);case _:
   return null;
 
 }
@@ -297,6 +303,72 @@ class _$TurnEventMetaCopyWithImpl<$Res>
   return _then(TurnEventMeta(
 null == counters ? _self.counters : counters // ignore: cast_nullable_to_non_nullable
 as ServerCounters,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class TurnEventOfflineReply implements TurnEvent {
+  const TurnEventOfflineReply(this.text);
+  
+
+ final  String text;
+
+/// Create a copy of TurnEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$TurnEventOfflineReplyCopyWith<TurnEventOfflineReply> get copyWith => _$TurnEventOfflineReplyCopyWithImpl<TurnEventOfflineReply>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is TurnEventOfflineReply&&(identical(other.text, text) || other.text == text));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,text);
+
+@override
+String toString() {
+  return 'TurnEvent.offlineReply(text: $text)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $TurnEventOfflineReplyCopyWith<$Res> implements $TurnEventCopyWith<$Res> {
+  factory $TurnEventOfflineReplyCopyWith(TurnEventOfflineReply value, $Res Function(TurnEventOfflineReply) _then) = _$TurnEventOfflineReplyCopyWithImpl;
+@useResult
+$Res call({
+ String text
+});
+
+
+
+
+}
+/// @nodoc
+class _$TurnEventOfflineReplyCopyWithImpl<$Res>
+    implements $TurnEventOfflineReplyCopyWith<$Res> {
+  _$TurnEventOfflineReplyCopyWithImpl(this._self, this._then);
+
+  final TurnEventOfflineReply _self;
+  final $Res Function(TurnEventOfflineReply) _then;
+
+/// Create a copy of TurnEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? text = null,}) {
+  return _then(TurnEventOfflineReply(
+null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 

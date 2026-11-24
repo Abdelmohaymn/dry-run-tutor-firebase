@@ -20,6 +20,7 @@ ChatRequestDto _$ChatRequestDtoFromJson(Map<String, dynamic> json) =>
       solutionRequestCount: (json['solution_request_count'] as num?)?.toInt(),
       keyCheck: json['key_check'] as bool?,
       finishOfferDismissed: json['finish_offer_dismissed'] as bool?,
+      offlineNote: json['offline_note'] as String?,
     );
 
 Map<String, dynamic> _$ChatRequestDtoToJson(ChatRequestDto instance) =>
@@ -32,6 +33,7 @@ Map<String, dynamic> _$ChatRequestDtoToJson(ChatRequestDto instance) =>
       'solution_request_count': ?instance.solutionRequestCount,
       'key_check': ?instance.keyCheck,
       'finish_offer_dismissed': ?instance.finishOfferDismissed,
+      'offline_note': ?instance.offlineNote,
     };
 
 MetaFrameDto _$MetaFrameDtoFromJson(Map<String, dynamic> json) {

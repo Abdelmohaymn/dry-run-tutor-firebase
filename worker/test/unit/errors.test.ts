@@ -7,12 +7,12 @@ import { AppError, ERROR_CODES, retryableFor, statusFor, toResponse } from "../.
 // status/retryable must match the catalog row for row.
 
 describe("error code set", () => {
-  it("is closed at exactly sixteen codes", () => {
-    expect(ERROR_CODES.length).toBe(16);
-    expect(new Set(ERROR_CODES).size).toBe(16);
+  it("is closed at exactly seventeen codes", () => {
+    expect(ERROR_CODES.length).toBe(17);
+    expect(new Set(ERROR_CODES).size).toBe(17);
   });
 
-  it("contains exactly the sixteen named codes", () => {
+  it("contains exactly the seventeen named codes", () => {
     expect([...ERROR_CODES].sort()).toEqual(
       [
         "RATE_LIMITED",
@@ -31,6 +31,7 @@ describe("error code set", () => {
         "VOICE_UNAVAILABLE",
         "VOICE_EXHAUSTED",
         "VOICE_BUSY",
+        "STEP_DIVERGED",
       ].sort(),
     );
   });
@@ -54,6 +55,7 @@ describe("status and retryable, row for row against error-catalog.md", () => {
     ["VOICE_UNAVAILABLE", 503, false],
     ["VOICE_EXHAUSTED", 429, false],
     ["VOICE_BUSY", 503, true],
+    ["STEP_DIVERGED", 409, false],
   ];
 
   it.each(table)("%s -> %i, retryable=%s", (code, status, retryable) => {

@@ -51,7 +51,7 @@ jobs:
           # release) still requires, and that warning alone fails
           # `flutter analyze`. Bump this once custom_lint ships support for
           # the new analyzer plugin system.
-          flutter-version: 3.41.3
+          flutter-version: 3.44.1
           channel: stable
           cache: true
       - run: flutter pub get

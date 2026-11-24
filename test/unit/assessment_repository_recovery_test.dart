@@ -3,13 +3,11 @@
 // resets the claim and judges the local conversation again, and whatever
 // fails along the way is surfaced as itself, never as the original
 // SESSION_ALREADY_JUDGED.
-import 'package:dry_run/core/config/runtime_config.dart';
 import 'package:dry_run/core/db/app_database.dart';
 import 'package:dry_run/core/errors/relay_error.dart';
 import 'package:dry_run/core/errors/result.dart';
 import 'package:dry_run/core/models/wire_enums.dart';
 import 'package:dry_run/core/network/dto/judge_dto.dart';
-import 'package:dry_run/core/network/dto/turn_dto.dart';
 import 'package:dry_run/core/network/relay_client.dart';
 import 'package:dry_run/features/assessment/data/assessment_repository_impl.dart';
 import 'package:dry_run/features/assessment/domain/assessment.dart';
@@ -20,12 +18,11 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import '../fakes/fake_config_repository.dart';
 import '../fakes/fake_install_repository.dart';
-import '../fakes/fake_key_repository.dart';
 import '../fakes/fake_outbox_repository.dart';
 import '../fakes/fake_trusted_time_source.dart';
 import '../fakes/mock_relay_client.dart';
+import '../fakes/step_fakes.dart';
 
 const Problem _problem = Problem(
   schemaVersion: 2,
@@ -72,9 +69,7 @@ void main() {
   late AssessmentRepositoryImpl repo;
 
   setUpAll(() {
-    registerFallbackValue(
-      JudgeRequestDto(problemId: 'vp-0001', conversation: const <TurnDto>[], endedBy: 'cap'),
-    );
+    registerStepFallbacks();
   });
 
   setUp(() async {
@@ -106,18 +101,10 @@ void main() {
       assessmentDao: db.assessmentDao,
       sessionDao: db.sessionDao,
       messageDao: db.messageDao,
-      configRepository: FakeRemoteConfigRepository()
-        ..cachedValue = const RuntimeConfig(
-          minSupportedVersion: '1.0.0',
-          killedProblemIds: <String>[],
-          chat: ChatConfig(turnCap: 4, wrapUpAtTurn: 3, minTurnChars: 5),
-          trial: TrialConfig(turnCap: 4),
-          keyedProviders: <String>['groq'],
-        ),
-      keyRepository: FakeKeyRepository(),
       installRepository: FakeInstallRepository(),
       timeSource: time,
       outboxRepository: outbox,
+      stepLoop: fakeStepLoop(),
     );
 
     when(() => relay.recoverJudge(installId: any(named: 'installId'), problemId: any(named: 'problemId')))
@@ -165,17 +152,12 @@ void main() {
   }
 
   void keyedJudge(Object Function() answer) {
-    when(() => relay.judge(
-          installId: any(named: 'installId'),
-          request: any(named: 'request'),
-          userKey: any(named: 'userKey'),
-          providerId: any(named: 'providerId'),
-        )).thenAnswer((_) async {
+    whenJudgeStep(relay).thenAnswer((_) async {
       final Object r = answer();
       if (r is Exception) {
         throw r;
       }
-      return r as AssessmentDto;
+      return doneJudge((r as AssessmentDto).toJson());
     });
   }
 
@@ -255,30 +237,5 @@ void main() {
     expect(error, isNot(isA<SessionAlreadyJudged>()));
     verify(() => relay.recoverJudge(installId: any(named: 'installId'), problemId: any(named: 'problemId')))
         .called(1);
-  });
-
-  test('trial path: recovery uses trialJudge for both calls', () async {
-    final Session session = await seed(SessionPath.trial);
-    int calls = 0;
-    when(() => relay.trialJudge(installId: any(named: 'installId'), request: any(named: 'request')))
-        .thenAnswer((_) async {
-      if (calls++ == 0) {
-        throw _alreadyJudged;
-      }
-      return _dto();
-    });
-
-    final Result<Assessment> result = await repo.request(session);
-
-    expect(result, isA<Ok<Assessment>>());
-    expect(calls, 2);
-    verify(() => relay.recoverJudge(installId: any(named: 'installId'), problemId: 'vp-0001')).called(1);
-    verifyNever(() => relay.judge(
-          installId: any(named: 'installId'),
-          request: any(named: 'request'),
-          userKey: any(named: 'userKey'),
-          providerId: any(named: 'providerId'),
-        ));
-    expect((await sessionRow())!.status, SessionStatus.complete);
   });
 }

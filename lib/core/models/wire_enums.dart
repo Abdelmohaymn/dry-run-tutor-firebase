@@ -44,6 +44,11 @@ enum Delivery { local, sending, sent, failedRetryable }
 /// `chat_turn_sent.input_mode` is Principle I's own falsification test.
 enum InputMode { voice, text }
 
+/// Where a conversation row came from. `offline` rows are an exchange with the
+/// on-device tutor (feature 010): they stay in the transcript but are never sent
+/// to the relay as history and never judged (FR-011a).
+enum MessageOrigin { online, offline }
+
 /// What an outbox row is queued to send.
 enum OutboxKind { chatTurn, judge }
 

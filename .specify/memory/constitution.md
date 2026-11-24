@@ -1,5 +1,66 @@
 <!--
 SYNC IMPACT REPORT (latest)
+Version change: 4.0.0 → 5.0.0
+Rationale: MAJOR. Two principles are redefined in a backward-incompatible way
+           for the Firebase hackathon entry (specs/010-firebase-hybrid-ai).
+           Principle VI said "ground truth never leaves the server" and "the app
+           talks to exactly one host: our proxy". The entry's rules require the
+           app to call Firebase AI Logic itself, so the model's instructions,
+           which carry ground truth, now reach the app per call. Principle VIII
+           said "there is no offline tutor". The entry's hybrid-inference
+           criterion needs one, so an on-device tutor now exists on phones that
+           support Gemini Nano.
+           Occasion (stated plainly, not dressed up as product insight): the app
+           is a Firebase "#BuildHybridAI" hackathon entry and its users are the
+           hackathon judges. This amendment applies to the entry's own branch
+           (`firebase-main`) and never merges to `main`, which stays on 4.0.0.
+           Not justified by D7 (Governance). Text pending owner read. Do not
+           publish the entry's repository until the owner has read it.
+
+Modified principles:
+  - Principle VI, "Ground Truth Never Leaves the Server": on the Firebase entry
+    the relay still holds the content and decides what is sent, but ground truth
+    MAY reach the app inside a model call's instructions, one call at a time.
+    The app holds it in memory only and MUST NEVER write it to disk, Drift, the
+    outbox, preferences, logs, crash reports or analytics, and MUST NEVER keep
+    it after the call's loop ends. It is NEVER bundled in the APK and NEVER shown
+    to the learner: the reply the learner sees is the relay's own checked output
+    (leak filter, rewrite, judge post-processing), not the model's raw draft.
+    "Exactly one host: our proxy" becomes "the proxy for content and decisions,
+    and Firebase AI Logic for model calls", the latter only through the Firebase
+    SDK and only with App Check on. The app holds no model key and the relay
+    holds none either; the user's-key rule is unchanged where keys exist (they do
+    not on this entry).
+  - Principle VIII, "Offline Never Punishes the User": "there is no offline
+    tutor" becomes "on phones that support Gemini Nano there is an offline tutor
+    that has no ground truth, gives no verdict, and whose turns are outside the
+    turn cap and the judge; it answers from the public problem statement only,
+    is labelled as offline, and takes over when the phone is offline or the
+    cloud model is rate-limited". On every other phone nothing changes. Every
+    "MUST still hold" bullet below it keeps holding.
+
+Not modified, but read against this amendment:
+  - Principle III (the tutor hints, it does not solve): the leak filter and the
+    rewrite stay on the relay, so a reply is checked before the learner sees it.
+    The offline tutor cannot leak what it never had.
+  - Principle II (the assessment classifies against ground truth): the judge
+    prompt, enums and post-processing are the same; the schema carries the
+    problem's own enums and the relay re-checks them.
+  - Principle X (zero developer cost): the entry runs on the Firebase Spark plan
+    with no payment method; a limit produces a rate-limit message, never a bill.
+
+Source of record: ../docs/constitution.md (outside this repo) is NOT amended by
+  this change: the amendment lives on `firebase-main` only.
+
+Deferred / follow-up TODOs:
+  - Owner reads this text and approves it (specs/010-firebase-hybrid-ai/tasks.md
+    T070) before the entry's repository is made public.
+  - README "How it uses Firebase AI Logic" must state the VI and VIII changes
+    plainly (tasks T062).
+-->
+
+<!--
+SYNC IMPACT REPORT (4.0.0)
 Version change: 3.0.0 → 4.0.0
 Rationale: MAJOR. Principle VII is redefined in a backward-incompatible way.
            It said "This app MUST NOT record, buffer, store, upload, or receive
@@ -289,6 +350,18 @@ Reference approaches, insights, wrong turns, follow-ups, and editorials live
 only on the proxy. The app receives the public half of a problem and nothing
 more, and talks to exactly one host: our proxy.
 
+*Firebase entry (5.0.0, `firebase-main` only).* The proxy still holds the
+content and still decides what is asked and what is shown. To let the app call
+Firebase AI Logic itself, ground truth MAY travel to the app inside a model
+call's instructions, one call at a time, over TLS. The app MUST hold it in
+memory only, MUST NEVER write it to disk, Drift, the outbox, preferences, logs,
+crash reports or analytics, MUST drop it when the call's loop ends, and it is
+NEVER bundled in the APK and NEVER shown to the learner: the learner sees the
+proxy's checked output, not the model's raw draft. The app then talks to two
+hosts: our proxy, and Firebase AI Logic through the Firebase SDK with App Check
+on. Neither the app nor the proxy holds a model key. This is a justified
+exception for the hackathon entry; the rest of this principle describes `main`.
+
 This is why the proxy survives BYOK. Calling the provider directly from the app
 would be simpler and cheaper, and would require shipping ground truth into the
 APK where anyone could unzip it. The proxy's job changes from paying for
@@ -360,8 +433,13 @@ context, never at launch.
 
 ### VIII. Offline Never Punishes the User
 
-Chat requires the network per turn; there is no offline tutor, and that is an
-accepted constraint. What MUST still hold:
+Chat requires the network per turn, and on `main` there is no offline tutor;
+that is an accepted constraint. *Firebase entry (5.0.0, `firebase-main` only):*
+on phones that support Gemini Nano there is an offline tutor. It answers from
+the public problem statement only, has no ground truth, gives no verdict, is
+labelled as the offline tutor, and its turns sit outside the turn cap and the
+judge. It takes over when the phone is offline or the cloud model is
+rate-limited; on every other phone nothing changes. What MUST still hold:
 
 - Recording and transcription work offline (the platform recogniser takes over
   when the phone is offline at mic tap); only the send fails.
@@ -528,4 +606,4 @@ Complexity MUST be justified against the D7 bar. Runtime development guidance
 lives in `docs/PLAN.md` (phases and DoDs) and `docs/design.md` (architecture);
 neither may contradict this document.
 
-**Version**: 4.0.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-10-07
+**Version**: 5.0.0 (firebase-main; owner read pending) | **Ratified**: 2026-08-13 | **Last Amended**: 2026-11-24

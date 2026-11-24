@@ -43,6 +43,15 @@ void main() {
     );
   }
 
+  group('noKeysGuard (FR-015)', () {
+    test('the key wall, key form and key management all land on today', () async {
+      configRepository.cachedValue = config;
+      for (final AppRoute route in <AppRoute>[AppRoute.keysWall, AppRoute.keysEntry, AppRoute.settingsKey]) {
+        expect(await redirect(route.path), AppRoute.daily.path, reason: route.path);
+      }
+    });
+  });
+
   group('seedGuard', () {
     test('fires when there is no cached config and no cached problem', () async {
       configRepository.cachedValue = null;

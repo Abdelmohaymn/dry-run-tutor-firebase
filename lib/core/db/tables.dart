@@ -118,6 +118,8 @@ class Messages extends Table {
   TextColumn get recognisedDraft => text().nullable()();
   TextColumn get inputMode => textEnum<InputMode>().nullable()();
   BoolColumn get coveredBySummary => boolean().withDefault(const Constant(false))();
+  // `offline` on both rows of an exchange the on-device tutor answered.
+  TextColumn get origin => textEnum<MessageOrigin>().withDefault(Constant(MessageOrigin.online.name))();
   DateTimeColumn get createdAt => dateTime()();
 
   @override

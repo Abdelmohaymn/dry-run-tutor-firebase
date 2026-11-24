@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/config/remote_config_repository.dart';
 import '../../../core/di/service_locator.dart';
-import '../../../core/models/wire_enums.dart' hide Verdict;
 import '../../../core/router/app_route.dart';
 import '../../assessment/domain/assessment_repository.dart';
 import '../../cloud_voice/domain/cloud_voice_repository.dart';
@@ -106,13 +105,9 @@ class DailySessionShell extends StatelessWidget {
         PullingHint() => AppRoute.daily.path,
         WrappingUp() => AppRoute.daily.path,
         FinishOffered() => AppRoute.daily.path,
-        // A trial-path cap is "a completed session" for FR-005a's wall
-        // (T090) — the app has no judge-driven `endSession` yet
-        // (Phase 6, T111), so the taster running out is the completion
-        // signal this phase has. A keyed-path cap stays on `/` and shows
-        // `_CapReachedNotice` inline; there is no wall to reach.
-        CapReached(:final session) =>
-          session.path == SessionPath.trial ? AppRoute.keysWall.path : AppRoute.daily.path,
+        // No key wall on this entry (FR-015): a reached cap stays on `/` and
+        // shows `_CapReachedNotice` inline.
+        CapReached() => AppRoute.daily.path,
         ConfirmSolutionRelease() => AppRoute.sessionConfirmSolution.path,
         // No screen of its own: `_pursueAssessment` is typically in and
         // out of this state before a frame paints, and `/session/verdict`

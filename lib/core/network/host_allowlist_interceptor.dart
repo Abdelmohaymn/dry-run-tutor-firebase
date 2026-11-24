@@ -3,10 +3,11 @@ import 'package:dio/dio.dart';
 /// Rejects any request whose host is not the configured relay, **before it
 /// reaches the socket** (FR-004, Principle VI).
 ///
-/// This is the client half of the reason the relay exists at all: the app
-/// must not be able to talk to a model provider directly, even by
-/// accident — a typo'd base URL, a copy-pasted debug request, a future
-/// contributor who does not know the rule. The check happens in
+/// This is the client half of the reason the relay exists at all: no dio
+/// request may reach a model provider, even by accident — a typo'd base URL,
+/// a copy-pasted debug request, a future contributor who does not know the
+/// rule. (Since feature 010 the model calls themselves go through the
+/// Firebase SDK in `core/ai/`, not through dio; dio stays relay-only.) The check happens in
 /// `onRequest`, ahead of dio's transport, so a disallowed host throws
 /// instead of dialling. `test/security/host_allowlist_test.dart` is what
 /// keeps this true.

@@ -2,6 +2,9 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
+    // START: FlutterFire Configuration
+    id("com.google.gms.google-services")
+    // END: FlutterFire Configuration
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
@@ -34,17 +37,18 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+    // Kotlin 2.4 removed the `kotlinOptions { jvmTarget = "…" }` string form.
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     defaultConfig {
         applicationId = "app.dryrun.tutor"
-        // minSdk 24 (Android 7.0) is the highest any plugin needs (flutter_local_notifications,
-        // flutter_secure_storage, shared_preferences, url_launcher). It was 31 while voice relied
-        // on the on-device recognizer, which needs API 31; the app now binds the default
-        // recognition service (recognition_service_impl.dart, onDevice: false), so it doesn't.
-        minSdk = 24
+        // minSdk 26 (Android 8.0): required by firebase-ai-ondevice (the Gemini Nano
+        // offline tutor). Every other plugin needs 24 at most.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -76,6 +80,10 @@ dependencies {
     implementation("com.google.android.gms:play-services-time:16.0.1")
     // Required by flutter_local_notifications alongside isCoreLibraryDesugaringEnabled above.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // OnDeviceModelChannel (feature 010): hybrid inference, on-device half. Pinned
+    // explicitly, not via the BoM (research.md R5); the ondevice artifact is beta.
+    implementation("com.google.firebase:firebase-ai:18.2.0")
+    implementation("com.google.firebase:firebase-ai-ondevice:16.0.0-beta08")
 }
 
 flutter {

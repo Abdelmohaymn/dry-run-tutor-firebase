@@ -9,30 +9,24 @@ import { describe, expect, it } from "vitest";
 // worker/src/** reader by design and never will.
 const LEVER_CONSUMERS: Record<string, { file: string; needle: string }[]> = {
   "killed_problem_ids": [
-    { file: "routes/chat.ts", needle: "killed_problem_ids" },
-    { file: "routes/judge.ts", needle: "killed_problem_ids" },
-    { file: "routes/trial.ts", needle: "killed_problem_ids" },
+    { file: "routes/v2-turn.ts", needle: "killed_problem_ids" },
+    { file: "routes/v2-judge.ts", needle: "killed_problem_ids" },
+    { file: "routes/v2-repair.ts", needle: "killed_problem_ids" },
   ],
-  "chat.turn_cap": [{ file: "routes/chat.ts", needle: "chat.turn_cap" }],
-  "chat.wrap_up_at_turn": [{ file: "lib/chat-core.ts", needle: "wrap_up_at_turn" }],
-  "chat.min_turn_chars": [{ file: "routes/chat.ts", needle: "min_turn_chars" }],
-  // Since per-key routing (FR-008b) both are read by the resolver, not by the
-  // routes: the route asks which provider THIS request belongs to, and
-  // `model`/`provider` are only the fallback when the app names none.
-  "model": [{ file: "lib/keyed-provider.ts", needle: "cfg.model" }],
-  "provider": [{ file: "lib/keyed-provider.ts", needle: "cfg.provider" }],
-  "keyed_providers": [{ file: "lib/keyed-provider.ts", needle: "keyed_providers" }],
-  "providers": [{ file: "lib/keyed-provider.ts", needle: "cfg.providers" }],
+  "chat.turn_cap": [{ file: "routes/v2-turn.ts", needle: "chat.turn_cap" }],
+  "chat.wrap_up_at_turn": [{ file: "lib/turn-pipeline.ts", needle: "wrap_up_at_turn" }],
+  "chat.min_turn_chars": [{ file: "routes/v2-turn.ts", needle: "min_turn_chars" }],
+  // The step relay holds no model key and calls no model (feature 010): the
+  // v1 provider levers (`model`, `provider`, `keyed_providers`, `providers`,
+  // `trim.condense_model`, the trial pool) have no reader here and stay at
+  // their defaults. The model per purpose is `gemini.models`.
+  "gemini": [{ file: "lib/runtime-config.ts", needle: "geminiCallOpts" }],
   "trim.verbatim_turns": [{ file: "lib/condense.ts", needle: "verbatim_turns" }],
   "trim.narrow_after_turn": [{ file: "lib/ground-truth.ts", needle: "narrow_after_turn" }],
   "trim.narrow_margin": [{ file: "lib/ground-truth.ts", needle: "narrow_margin" }],
-  "trim.condense_model": [{ file: "lib/keyed-provider.ts", needle: "condense_model" }],
-  "trial.turn_cap": [{ file: "routes/trial.ts", needle: "trial.turn_cap" }],
-  "trial.ground_truth_tier": [{ file: "routes/trial.ts", needle: "ground_truth_tier" }],
-  "trial.condense": [{ file: "routes/trial.ts", needle: "condenseEnabled: cfg.trial.condense" }],
-  "trial.daily_session_cap": [{ file: "lib/trial-pool.ts", needle: "daily_session_cap" }],
-  "trial.sessions_per_device": [{ file: "lib/trial-pool.ts", needle: "sessions_per_device" }],
-  "trial.pool": [{ file: "lib/trial-pool.ts", needle: "trial.pool" }],
+  // The onboarding walkthrough's own cap and ground-truth tier.
+  "trial.practice_turn_cap": [{ file: "routes/v2-turn.ts", needle: "trial.practice_turn_cap" }],
+  "trial.ground_truth_tier": [{ file: "lib/turn-pipeline.ts", needle: "trial.ground_truth_tier" }],
   // Feature 008. `enabled` is read once, by voiceConfig(); the rest by the
   // stt route. `model` is the Worker's own choice and is never served.
   "voice.enabled": [{ file: "lib/runtime-config.ts", needle: "cfg.voice.enabled" }],

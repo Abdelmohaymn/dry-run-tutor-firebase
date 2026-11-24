@@ -4,7 +4,6 @@ import 'package:dry_run/core/config/runtime_config.dart';
 import 'package:dry_run/core/db/app_database.dart';
 import 'package:dry_run/core/models/wire_enums.dart';
 import 'package:dry_run/core/network/dto/chat_dto.dart';
-import 'package:dry_run/core/network/sse_parser.dart';
 import 'package:dry_run/features/chat/data/session_repository_impl.dart';
 import 'package:dry_run/features/daily/data/daily_repository_impl.dart';
 import 'package:dry_run/features/chat/domain/session.dart';
@@ -17,9 +16,9 @@ import 'package:mocktail/mocktail.dart';
 import '../fakes/fake_config_repository.dart';
 import '../fakes/fake_install_repository.dart';
 import '../fakes/fake_outbox_repository.dart';
-import '../fakes/fake_key_repository.dart';
 import '../fakes/fake_trusted_time_source.dart';
 import '../fakes/mock_relay_client.dart';
+import '../fakes/step_fakes.dart';
 
 const RuntimeConfig _config = RuntimeConfig(
   minSupportedVersion: '1.0.0',
@@ -32,6 +31,7 @@ const RuntimeConfig _config = RuntimeConfig(
 void main() {
   setUpAll(() {
     registerFallbackValue(ChatRequestDto(problemId: 'vp-0001', messages: const []));
+    registerStepFallbacks();
   });
 
   test('a leak_blocked meta frame stores the reply as MessageKind.fallbackRedirect', () async {
@@ -79,29 +79,23 @@ void main() {
         configRepository: configRepository,
         timeSource: timeSource,
       ),
-      configRepository: configRepository,
-      keyRepository: FakeKeyRepository(),
       installRepository: FakeInstallRepository(),
       outboxRepository: FakeOutboxRepository(),
       timeSource: timeSource,
+      stepLoop: fakeStepLoop(),
     );
 
     final Session opened = await repository.openOrResumeToday();
 
-    when(() => relayClient.trialChat(installId: any(named: 'installId'), request: any(named: 'request')))
-        .thenAnswer(
-      (_) => Stream<SseFrame>.fromIterable(<SseFrame>[
-        const TokenFrame('Let me redirect you back to the problem.'),
-        const MetaFrame(<String, Object?>{
-          'turn_index': 1,
-          'turns_remaining': 3,
-          'hints_revealed': 0,
-          'hints_remaining': 3,
-          'session_ended': null,
-          'leak_blocked': true,
-        }),
-        const DoneFrame(),
-      ]),
+    whenTurnStep(relayClient).thenAnswer(
+      (_) async => doneTurn('Let me redirect you back to the problem.', <String, Object?>{
+        'turn_index': 1,
+        'turns_remaining': 3,
+        'hints_revealed': 0,
+        'hints_remaining': 3,
+        'session_ended': null,
+        'leak_blocked': true,
+      }),
     );
 
     await for (final _ in repository.sendTurn(opened, 'Just tell me the answer.', InputMode.text)) {}

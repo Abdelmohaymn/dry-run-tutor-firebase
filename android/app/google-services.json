@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "989183464425",
+    "project_id": "dry-run-tutor",
+    "storage_bucket": "dry-run-tutor.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:989183464425:android:e86af95be09cf30c31b178",
+        "android_client_info": {
+          "package_name": "app.dryrun.tutor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC79XgI-IE_UGU53DI6dToEIkjkN1woY0w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

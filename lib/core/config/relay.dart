@@ -1,15 +1,16 @@
 /// The relay base URL.
 ///
-/// No provider base URL appears here or anywhere in `lib/` — the app speaks
-/// to exactly one host, the relay, and never to a model provider directly.
-/// That guarantee does not live in this file: `dio_client.dart` derives
+/// No provider base URL appears here or anywhere in `lib/`. HTTP through dio
+/// reaches exactly one host, the relay: `dio_client.dart` derives
 /// `HostAllowlistInterceptor`'s allowed host from whatever [relayBaseUrl]
 /// resolves to, so exactly one host is dialable no matter which value wins
-/// below (FR-004).
+/// below (FR-004). The app also talks to Firebase AI Logic, but through the
+/// Firebase SDK (`firebase_ai`), never through dio, and only for the model
+/// calls the relay asks for (feature 010).
 ///
 /// Every build talks to the deployed worker. To point a build at a local
 /// `wrangler dev` instead, pass `--dart-define=RELAY_BASE_URL=https://...`.
-const String defaultRelayBaseUrl = 'https://dry-run-tutor.dryrun-app.workers.dev';
+const String defaultRelayBaseUrl = 'https://dry-run-tutor-firebase.dryrun-app.workers.dev';
 
 const String _relayBaseUrlDefine = String.fromEnvironment('RELAY_BASE_URL');
 

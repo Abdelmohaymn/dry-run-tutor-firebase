@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.11.1
+  sdk: ^3.12.0
 
 dependencies:
   flutter:
@@ -37,6 +37,10 @@ dependencies:
   equatable: ^2.1.0
   record: ^6.0.0
   path_provider: ^2.1.6
+  # Firebase entry (feature 010): cloud Gemini via Firebase AI Logic, App Check.
+  firebase_core: ^5.1.0
+  firebase_ai: ^5.2.0
+  firebase_app_check: ^0.5.2
   # Web demo only (feature 007): fetch streaming and the host page bridge.
 
 dev_dependencies:

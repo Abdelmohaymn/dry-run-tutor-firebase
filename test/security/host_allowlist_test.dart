@@ -1,6 +1,8 @@
-// FR-004 / Principle VI: the app speaks to exactly one host. A request to
-// any other host — including a provider's own API — must throw before it
-// reaches the socket, not merely be discouraged by convention.
+// FR-004 / Principle VI: dio speaks to exactly one host. A request to any
+// other host — including a provider's own API — must throw before it
+// reaches the socket, not merely be discouraged by convention. (The Firebase
+// AI Logic model calls of feature 010 go through the Firebase SDK, not dio,
+// so this allowlist still covers every HTTP request the app makes itself.)
 import 'dart:typed_data';
 
 import 'package:dry_run/core/network/host_allowlist_interceptor.dart';
@@ -11,9 +13,9 @@ void main() {
   late Dio dio;
 
   setUp(() {
-    dio = Dio(BaseOptions(baseUrl: 'https://dry-run-tutor.dryrun-app.workers.dev'));
+    dio = Dio(BaseOptions(baseUrl: 'https://dry-run-tutor-firebase.dryrun-app.workers.dev'));
     dio.interceptors.add(
-      HostAllowlistInterceptor(allowedHost: 'dry-run-tutor.dryrun-app.workers.dev'),
+      HostAllowlistInterceptor(allowedHost: 'dry-run-tutor-firebase.dryrun-app.workers.dev'),
     );
     // No transport is configured, so any request that gets past the
     // allowlist would fail on a real socket call rather than silently

@@ -18,4 +18,8 @@ part 'turn_event.freezed.dart';
 sealed class TurnEvent with _$TurnEvent {
   const factory TurnEvent.token(String text) = TurnEventToken;
   const factory TurnEvent.meta(ServerCounters counters) = TurnEventMeta;
+
+  /// The on-device tutor answered (feature 010): the whole reply at once, with no
+  /// counters. The turn cap, the hints and the judge are untouched by it.
+  const factory TurnEvent.offlineReply(String text) = TurnEventOfflineReply;
 }

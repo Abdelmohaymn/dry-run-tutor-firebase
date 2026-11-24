@@ -66,6 +66,17 @@ sealed class RelayError with _$RelayError {
   /// field from the request.
   const factory RelayError.badRequest() = BadRequest;
 
+  /// Firebase App Check would not attest this build, so the tutor's model
+  /// cannot be reached from it (feature 010). Not retryable by waiting.
+  const factory RelayError.clientUnverified() = ClientUnverified;
+
+  /// The phone is offline and its on-device tutor is still downloading
+  /// (feature 010). Not a catalogue code; the learner is asked to try again soon.
+  const factory RelayError.offlineTutorDownloading() = OfflineTutorDownloading;
+
+  /// The on-device tutor is being rationed by the system (feature 010).
+  const factory RelayError.offlineTutorBusy() = OfflineTutorBusy;
+
   /// The request never reached the relay at all — no connectivity, a
   /// timeout before any response, a DNS failure. Not a catalogue code;
   /// this is what puts a row in the outbox instead of a message on a
@@ -103,6 +114,9 @@ extension RelayErrorCode on RelayError {
         TrialIpLimited() => 'TRIAL_IP_LIMIT',
         ProblemKilled() => 'PROBLEM_KILLED',
         BadRequest() => 'BAD_REQUEST',
+        ClientUnverified() => 'CLIENT_UNVERIFIED',
+        OfflineTutorDownloading() => 'OFFLINE_TUTOR_DOWNLOADING',
+        OfflineTutorBusy() => 'OFFLINE_TUTOR_BUSY',
         TransportFailure() => 'NETWORK',
       };
 }

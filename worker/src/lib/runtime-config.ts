@@ -76,6 +76,51 @@ const voiceSchema = z
   })
   .strict();
 
+/** The seven model-call purposes of the step protocol (contracts/relay-steps.md). */
+export const PURPOSES = ["tutor", "rewrite", "progress", "condense", "evidence", "judge", "repair"] as const;
+export type Purpose = (typeof PURPOSES)[number];
+
+/** Per-purpose override map with a required `default` (data-model.md §R3). */
+function purposeMap<T extends z.ZodType>(value: T) {
+  return z
+    .object({
+      tutor: value.optional(),
+      rewrite: value.optional(),
+      progress: value.optional(),
+      condense: value.optional(),
+      evidence: value.optional(),
+      judge: value.optional(),
+      repair: value.optional(),
+      default: value,
+    })
+    .strict();
+}
+
+/**
+ * Firebase entry: the Gemini call settings the relay hands the app inside each
+ * ModelCall. Required — no model id is compiled in (Constitution X.3). Worker
+ * reads it; GET /v1/config strips it.
+ */
+const geminiSchema = z
+  .object({
+    models: z
+      .object({
+        tutor: z.string(),
+        rewrite: z.string(),
+        progress: z.string(),
+        evidence: z.string(),
+        condense: z.string(),
+        judge: z.string(),
+        repair: z.string(),
+      })
+      .strict(),
+    thinking_budget: purposeMap(z.number().int().min(0).nullable()),
+    timeout_ms: purposeMap(z.number().int().min(500).max(60000)),
+    temperature: purposeMap(z.number().min(0).max(2)),
+    max_output_tokens: purposeMap(z.number().int().min(16).max(8192)),
+  })
+  .strict();
+
 export const runtimeConfigSchema = z
   .object({
     min_supported_version: z.string().regex(/^\d+\.\d+\.\d+$/),
@@ -107,6 +152,8 @@ export const runtimeConfigSchema = z
     keyed_providers: z.array(z.enum(["groq", "openrouter", "gemini", "nebius"])).min(1).optional(),
     providers: z.record(z.string(), keyedProviderSchema).optional(),
     repair: repairSchema.optional(),
+    /** Firebase entry: Gemini call settings per purpose. Required; never served to the app. */
+    gemini: geminiSchema,
     /**
      * Server-side speech-to-text (feature 008). Optional; absent means
      * voice is off, and the app keeps using the on-device recogniser.
@@ -228,6 +275,36 @@ export function webConfig(cfg: RuntimeConfig): NonNullable<RuntimeConfig["web"]>
 /** `cfg.voice`, or null when the block is absent or `enabled` is false (voice off). */
 export function voiceConfig(cfg: RuntimeConfig): NonNullable<RuntimeConfig["voice"]> | null {
   return cfg.voice && cfg.voice.enabled ? cfg.voice : null;
+}
+
+export interface GeminiCallOpts {
+  model: string;
+  thinking_budget: number | null;
+  timeout_ms: number;
+  temperature: number;
+  max_output_tokens: number;
+}
+
+/** Resolves model, thinking budget, timeout, temperature and token cap for one purpose. */
+export function geminiCallOpts(cfg: RuntimeConfig, purpose: Purpose): GeminiCallOpts {
+  const g = cfg.gemini;
+  const pick = <T>(m: { default: T } & Partial<Record<Purpose, T>>): T => {
+    const v = m[purpose];
+    return v === undefined ? m.default : v;
+  };
+  const timeoutOverride = g.timeout_ms[purpose];
+  return {
+    model: g.models[purpose],
+    thinking_budget: pick(g.thinking_budget),
+    timeout_ms:
+      timeoutOverride !== undefined
+        ? timeoutOverride
+        : purpose === "progress"
+          ? cfg.finish_offer.timeout_ms
+          : g.timeout_ms.default,
+    temperature: pick(g.temperature),
+    max_output_tokens: pick(g.max_output_tokens),
+  };
 }
 
 /** Reads and validates the single `config` row. Throws on a payload that fails the schema — an invalid config is never served. */

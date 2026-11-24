@@ -382,6 +382,78 @@ abstract class AppLocalizations {
   /// **'Something failed on our side. Try again, and update the app if it keeps happening.'**
   String get errBadRequest;
 
+  /// CLIENT_UNVERIFIED. Firebase App Check would not attest this install, so the model call was refused (feature 010).
+  ///
+  /// In en, this message translates to:
+  /// **'This build can\'t reach the tutor.'**
+  String get errClientUnverified;
+
+  /// Shown when the phone is offline and Gemini Nano is not ready yet (feature 010).
+  ///
+  /// In en, this message translates to:
+  /// **'The offline tutor is still downloading — try again soon.'**
+  String get errOfflineTutorDownloading;
+
+  /// Shown when the system is rationing the on-device model (feature 010).
+  ///
+  /// In en, this message translates to:
+  /// **'The offline tutor is busy — try again in a moment.'**
+  String get errOfflineTutorBusy;
+
+  /// What the offline tutor says when its own answer was empty, too long, or sounded like a verdict (research.md R11).
+  ///
+  /// In en, this message translates to:
+  /// **'Keep going — talk me through your approach step by step.'**
+  String get offlineTutorFallbackLine;
+
+  /// Small caption under a reply the on-device tutor wrote (feature 010, FR-010).
+  ///
+  /// In en, this message translates to:
+  /// **'Offline tutor'**
+  String get offlineTutorLabel;
+
+  /// Subtle marker on a learner turn the offline tutor answered.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get offlineTutorYouLabel;
+
+  /// Settings row title (feature 010).
+  ///
+  /// In en, this message translates to:
+  /// **'Offline tutor'**
+  String get settingsOfflineTutorLabel;
+
+  /// Offline tutor status: the model is on the phone.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get settingsOfflineTutorReady;
+
+  /// Offline tutor status: the model is downloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get settingsOfflineTutorDownloading;
+
+  /// Offline tutor status: this phone cannot run Gemini Nano.
+  ///
+  /// In en, this message translates to:
+  /// **'Not supported on this phone'**
+  String get settingsOfflineTutorNotSupported;
+
+  /// Offline tutor status: supported, the download has not started.
+  ///
+  /// In en, this message translates to:
+  /// **'Will download on Wi-Fi'**
+  String get settingsOfflineTutorWillDownload;
+
+  /// Debug-only switch: the cloud tutor call answers rate-limited so the offline fallback can be tested.
+  ///
+  /// In en, this message translates to:
+  /// **'Simulate cloud rate limit'**
+  String get settingsSimulateRateLimitLabel;
+
   /// Client-side transport failure (never reached the relay). A retryable bubble in the conversation, never a lost thought (FR-042).
   ///
   /// In en, this message translates to:

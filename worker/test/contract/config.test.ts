@@ -1,6 +1,10 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { runtimeConfigSchema } from "../../src/lib/runtime-config";
+import { TEST_GEMINI_CONFIG } from "../fixtures/gemini-config";
+
+// `gemini` is required by the schema but never served, so re-add it before validating.
+const withGemini = (body: unknown) => ({ ...(body as object), gemini: TEST_GEMINI_CONFIG });
 
 // US6 scenario 1, SC-012.
 describe("GET /v1/config", () => {
@@ -10,7 +14,8 @@ describe("GET /v1/config", () => {
     expect(res.headers.get("cache-control")).toContain("max-age=300");
     expect(res.headers.get("etag")).toBeTruthy();
     const body = await res.json();
-    expect(() => runtimeConfigSchema.parse(body)).not.toThrow();
+    expect(body).not.toHaveProperty("gemini");
+    expect(() => runtimeConfigSchema.parse(withGemini(body))).not.toThrow();
   });
 
   it("never sends the web lever block (feature 007 — the app has no use for it)", async () => {
@@ -78,6 +83,6 @@ describe("GET /v1/config", () => {
     await putVoice(undefined);
     const body = await served();
     expect(body).not.toHaveProperty("voice");
-    expect(() => runtimeConfigSchema.parse(body)).not.toThrow();
+    expect(() => runtimeConfigSchema.parse(withGemini(body))).not.toThrow();
   });
 });

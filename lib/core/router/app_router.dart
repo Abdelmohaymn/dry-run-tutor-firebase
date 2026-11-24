@@ -14,8 +14,6 @@ import '../../features/chat/presentation/daily_screen.dart';
 import '../../features/chat/presentation/daily_session_shell.dart';
 import '../../features/daily/presentation/review_day_screen.dart';
 import '../../features/daily/presentation/withdrawn_screen.dart';
-import '../../features/keys/presentation/key_entry_screen.dart';
-import '../../features/keys/presentation/wall_screen.dart';
 import '../../features/onboarding/domain/install_repository.dart';
 import '../../features/onboarding/presentation/mic_rationale_screen.dart';
 import '../../features/onboarding/presentation/practice_screen.dart';
@@ -23,7 +21,6 @@ import '../../features/onboarding/presentation/seeding_screen.dart';
 import '../../features/onboarding/presentation/welcome_screen.dart';
 import '../../features/problem/domain/problem_repository.dart';
 import '../../features/problem/presentation/problem_picker_screen.dart';
-import '../../features/settings/presentation/key_management_screen.dart';
 import '../../features/settings/presentation/reminder_screen.dart';
 import '../../features/settings/domain/settings_repository.dart';
 import '../../features/settings/presentation/settings_screen.dart';
@@ -93,12 +90,6 @@ GoRouter buildAppRouter({
     AppRoute.sessionReview.path,
     AppRoute.sessionMicRationale.path,
     AppRoute.sessionRecognitionUnavailable.path,
-    // The wall and key entry (US2) need `DailySessionCubit` to survive
-    // the visit: the trial→keyed handover (FR-007a/b) and mid-session
-    // `InvalidKey` re-entry (FR-005c) both resume the same conversation
-    // on return, which only works if the Cubit was never disposed.
-    AppRoute.keysWall.path,
-    AppRoute.keysEntry.path,
     // Solution confirm, verdict, and reveal (US4) all read the same
     // Cubit's state — none of the three has anything to show if the
     // Cubit that carries the `Assessment` was disposed on the way here.
@@ -160,16 +151,6 @@ GoRouter buildAppRouter({
             path: AppRoute.sessionRecognitionUnavailable.path,
             name: AppRoute.sessionRecognitionUnavailable.path,
             builder: (_, _) => const RecognitionUnavailableScreen(),
-          ),
-          GoRoute(
-            path: AppRoute.keysWall.path,
-            name: AppRoute.keysWall.path,
-            builder: (_, _) => const WallScreen(),
-          ),
-          GoRoute(
-            path: AppRoute.keysEntry.path,
-            name: AppRoute.keysEntry.path,
-            builder: (_, _) => const KeyEntryScreen(),
           ),
           GoRoute(
             path: AppRoute.sessionConfirmSolution.path,
@@ -251,11 +232,6 @@ GoRouter buildAppRouter({
         builder: (_, _) => const SettingsScreen(),
       ),
       GoRoute(
-        path: AppRoute.settingsKey.path,
-        name: AppRoute.settingsKey.path,
-        builder: (_, _) => const KeyManagementScreen(),
-      ),
-      GoRoute(
         path: AppRoute.settingsReminder.path,
         name: AppRoute.settingsReminder.path,
         builder: (_, _) => const ReminderScreen(),
@@ -309,6 +285,14 @@ Future<String?> resolveAppRedirect(
   required ProblemRepository problemRepository,
   required String currentAppVersion,
 }) async {
+  // 0. noKeysGuard — this entry has no learner key (FR-015): the model is
+  // reached through Firebase AI Logic, so the key wall, the key form and key
+  // management are not screens. A stale deep link or an old code path lands
+  // on today's problem instead of a form that no longer does anything.
+  if (_keyRoutes.contains(location)) {
+    return AppRoute.daily.path;
+  }
+
   // 1. seedGuard — fires only when there is no cached config AND no
   // cached problem (FR-047). After a single success, a later offline
   // launch never sees this again, because at least one of the two caches
@@ -354,6 +338,8 @@ Future<String?> resolveAppRedirect(
 
   return null;
 }
+
+const Set<String> _keyRoutes = <String>{'/keys/wall', '/keys/entry', '/settings/key'};
 
 /// `true` if [current] is strictly below [minimum], comparing
 /// `major.minor.patch` numerically. Either string failing to parse never

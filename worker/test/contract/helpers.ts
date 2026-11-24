@@ -1,7 +1,6 @@
-import { env, SELF, fetchMock } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 
 export const GROQ_ORIGIN = "https://api.groq.com";
-export const GROQ_CHAT_PATH = "/openai/v1/chat/completions";
 
 /** Registers the given Android ID; the same id always yields the same install id. */
 export async function mintInstallIdFor(deviceId: string): Promise<string> {
@@ -21,131 +20,6 @@ export async function mintInstallId(): Promise<string> {
 /** Raw judge `insights_hit` entries, every key quoting the same learner words. */
 export function quotedHits(keys: string[], quote: string) {
   return keys.map((key) => ({ quote, key }));
-}
-
-/**
- * Stubs the judge's evidence-check call. Reads the claim ids from the
- * request's own schema, so a test only says which ones are supported.
- * Register it after the judge's own intercept: interceptors on one path
- * are consumed in registration order.
- *
- * The judge now makes two evidence-check calls (2026-10-13, PLAN_08): the
- * support check on the progress check's insights, before the judge, and the
- * approach check after it. `only` routes a stub to one of them by its claim
- * ids: "approach" matches a request that has an `approach:` claim, "settled"
- * one that has none. Without it any evidence check matches, as before.
- */
-export function interceptEvidenceCheck(
-  supported: boolean | ((id: string) => boolean) = true,
-  target: { origin: string; path: string } = { origin: GROQ_ORIGIN, path: GROQ_CHAT_PATH },
-  only?: "approach" | "settled",
-) {
-  const claimIds = (rawBody: string): string[] =>
-    JSON.parse(rawBody).response_format?.json_schema?.schema?.properties?.results?.items?.properties?.id?.enum ?? [];
-  fetchMock
-    .get(target.origin)
-    .intercept({
-      path: target.path,
-      method: "POST",
-      ...(only
-        ? {
-            body: (b: string) =>
-              JSON.parse(b).response_format?.json_schema?.name === "evidence_check" &&
-              claimIds(b).some((id) => id.startsWith("approach:")) === (only === "approach"),
-          }
-        : {}),
-    })
-    .reply(200, (opts) => {
-      const ids = claimIds(opts.body as string);
-      const decide = typeof supported === "function" ? supported : () => supported;
-      return groqCompletionBody(JSON.stringify({ results: ids.map((id) => ({ id, why: "stub", supported: decide(id) })) }));
-    });
-}
-
-/**
- * Stubs the judge-time progress check (finish_check) with a 200 that carries no
- * usable answer, so the worker settles nothing and the judge takes today's
- * path (model lists plus evidence check). 2026-10-12, PLAN_07: the judge now
- * makes this extra non-stream call first, and without a stub of its own it
- * would consume the judge's. Register it BEFORE the judge's own intercept,
- * since interceptors on one path are consumed in registration order. Routed by
- * the request's schema name, so it never answers any other call.
- */
-export function interceptFinalCheckUnusable(
-  target: { origin: string; path: string } = { origin: GROQ_ORIGIN, path: GROQ_CHAT_PATH },
-) {
-  fetchMock
-    .get(target.origin)
-    .intercept({
-      path: target.path,
-      method: "POST",
-      body: (b: string) => JSON.parse(b).response_format?.json_schema?.name === "finish_check",
-    })
-    .reply(200, groqCompletionBody("{}"));
-}
-
-/** A minimal, valid streaming SSE body an OpenAI-compatible endpoint would return. */
-export function groqStreamBody(
-  text: string,
-  usage: { prompt_tokens: number; completion_tokens: number } = { prompt_tokens: 500, completion_tokens: 50 },
-): string {
-  return [
-    `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`,
-    `data: ${JSON.stringify({ choices: [{ delta: {} }], usage })}\n\n`,
-    `data: [DONE]\n\n`,
-  ].join("");
-}
-
-/** A minimal, valid non-streaming completion body (condense / judge shape). */
-export function groqCompletionBody(
-  content: string,
-  usage: { prompt_tokens: number; completion_tokens: number } = { prompt_tokens: 100, completion_tokens: 20 },
-) {
-  return { choices: [{ message: { content } }], usage };
-}
-
-/**
- * Sends one /v1/chat turn, capturing the raw outbound request body via
- * undici's reply-callback form (invoked exactly once per consumed request —
- * unlike an options.body matcher function, which fires twice), and fully
- * drains the SSE response before returning. NOTE: leaving a streamed
- * response undrained across successive requests in a loop has been observed
- * to break vitest-pool-workers' isolated-storage bookkeeping — always drain.
- */
-export async function sendTurnCapturingSystemPrompt(
-  installId: string,
-  n: number,
-  capturedBodies: string[],
-): Promise<{ status: number }> {
-  fetchMock
-    .get(GROQ_ORIGIN)
-    .intercept({ path: GROQ_CHAT_PATH, method: "POST" })
-    .reply(
-      200,
-      (opts) => {
-        capturedBodies.push(opts.body as string);
-        return groqStreamBody(`reply ${n}`);
-      },
-      { headers: { "content-type": "text/event-stream" } },
-    );
-
-  const res = await SELF.fetch("https://worker.test/v1/chat", {
-    method: "POST",
-    headers: {
-      "X-Install-Id": installId,
-      "X-User-Key": "gsk_test_learner_key",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ problem_id: "vp-0001", messages: [{ role: "user", text: `turn ${n}` }] }),
-  });
-  const status = res.status;
-  await res.text();
-  return { status };
-}
-
-export function systemPromptOf(rawBody: string): string {
-  const parsed = JSON.parse(rawBody);
-  return parsed.messages[0].content as string;
 }
 
 /**
@@ -261,19 +135,81 @@ export async function postStt(
   return SELF.fetch(url.toString(), { method: "POST", headers, body: bytes });
 }
 
-export async function readChatSSE(res: Response): Promise<{ event: string; data: unknown }[]> {
-  const text = await res.text();
-  const frames: { event: string; data: unknown }[] = [];
-  for (const raw of text.split("\n\n")) {
-    if (!raw.trim()) continue;
-    const lines = raw.split("\n");
-    const eventLine = lines.find((l) => l.startsWith("event:"));
-    const dataLine = lines.find((l) => l.startsWith("data:"));
-    if (!eventLine || !dataLine) continue;
-    frames.push({
-      event: eventLine.slice(6).trim(),
-      data: JSON.parse(dataLine.slice(5).trim()),
-    });
+// ---- Step protocol (contracts/relay-steps.md) --------------------------------
+
+import type { Answers, ModelAnswer, ModelCall } from "../../src/lib/step-port";
+
+/** Decides one call's answer. Return `undefined` to answer `{error:"other"}` (an optional call that failed). */
+export type StepScript = (call: ModelCall) => ModelAnswer | undefined;
+
+/** The fake app: answers every call of one `status: "model"` response. */
+export function answerAll(calls: ModelCall[], script: StepScript): Answers {
+  const answers: Answers = {};
+  for (const call of calls) answers[call.id] = script(call) ?? { error: "other" };
+  return answers;
+}
+
+export interface StepRun {
+  status: number;
+  body: any;
+  /** The calls each `model` response carried, in order. */
+  rounds: ModelCall[][];
+  posts: number;
+}
+
+export async function postStep(path: string, installId: string | null, body: unknown): Promise<{ status: number; body: any }> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (installId !== null) headers["X-Install-Id"] = installId;
+  const res = await SELF.fetch(`https://worker.test${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  return { status: res.status, body: await res.json() };
+}
+
+/**
+ * Plays the app's loop: POST, answer the calls with `script`, POST again with
+ * every answer so far, until `done` or an error (at most `maxPosts`).
+ */
+export async function runSteps(
+  path: string,
+  installId: string,
+  payload: Record<string, unknown>,
+  script: StepScript,
+  maxPosts = 6,
+  initialAnswers: Answers = {},
+): Promise<StepRun> {
+  const rounds: ModelCall[][] = [];
+  let answers: Answers = { ...initialAnswers };
+  let last = { status: 0, body: undefined as any };
+  for (let posts = 1; posts <= maxPosts; posts++) {
+    last = await postStep(path, installId, { ...payload, answers });
+    if (last.status !== 200 || last.body.status !== "model") return { ...last, rounds, posts };
+    const calls = last.body.calls as ModelCall[];
+    rounds.push(calls);
+    answers = { ...answers, ...answerAll(calls, script) };
   }
-  return frames;
+  return { ...last, rounds, posts: maxPosts };
+}
+
+/** `/v2/turn` payload for vp-0001 with one learner message. */
+export function turnPayload(text: string, extra: Record<string, unknown> = {}, request: Record<string, unknown> = {}) {
+  return {
+    turn_key: crypto.randomUUID(),
+    request: { problem_id: "vp-0001", messages: [{ role: "user", text }], ...request },
+    ...extra,
+  };
+}
+
+/** The `device_day` row of one install/problem, or null. */
+export async function deviceDay(installId: string, problemId = "vp-0001") {
+  return env.DB
+    .prepare("SELECT * FROM device_day WHERE device_hash = ?1 AND problem_id = ?2")
+    .bind(installId.split(".")[0], problemId)
+    .first<Record<string, any>>();
+}
+
+/** An evidence-check answer that marks every claim in the call's schema as `supported`. */
+export function evidenceAnswer(call: ModelCall, supported: boolean | ((id: string) => boolean) = true): ModelAnswer {
+  const schema = (call.output as { kind: "json"; schema: any }).schema;
+  const ids: string[] = schema?.properties?.results?.items?.properties?.id?.enum ?? [];
+  const decide = typeof supported === "function" ? supported : () => supported;
+  return { json: { results: ids.map((id) => ({ id, why: "stub", supported: decide(id) })) } };
 }

@@ -3,7 +3,7 @@
 // every schema version pair intact. Destroying retained history quietly in
 // a migration is exactly how an "indefinite" promise breaks.
 //
-// The schema is at version 7. v2 adds the nullable
+// The schema is at version 8. v2 adds the nullable
 // `CachedProblems.examplesJson`; v3 adds `Sessions.isPractice`, defaulted
 // false; v4 adds the nullable `Drafts.repaired` (feature 004). Those three
 // are additive and touch nothing retained. v5 is the first that deletes:
@@ -11,8 +11,9 @@
 // per write until their ids were pinned. v6 (feature 006) clears
 // `install_identity` (identity is now a hash of the Android ID) and drops
 // the analytics `buffered_events` table. v7 (PLAN_07) adds the nullable
-// `Assessments.insightsAssisted`, with no backfill. Extend rather than
-// rewrite when a v8 lands — bump `AppDatabase.schemaVersion`, add the migration step, and
+// `Assessments.insightsAssisted`, with no backfill. v8 (feature 010) adds
+// `Messages.origin`, defaulted online. Extend rather than
+// rewrite when a v9 lands — bump `AppDatabase.schemaVersion`, add the migration step, and
 // add a case to the migration test below.
 import 'package:dry_run/core/db/app_database.dart';
 import 'package:dry_run/core/db/converters.dart';
@@ -30,10 +31,10 @@ void main() {
       await _expectSessionIntact(db);
     });
 
-    test('schemaVersion is 7 — the floor this test suite assumes', () {
+    test('schemaVersion is 8 — the floor this test suite assumes', () {
       final AppDatabase db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
-      expect(db.schemaVersion, 7);
+      expect(db.schemaVersion, 8);
     });
 
     test('the v1 -> v2 migration adds examplesJson and keeps the row', () async {
@@ -173,7 +174,21 @@ void main() {
       expect(row.insightsAssisted, isNull, reason: 'no backfill; null reads as empty (D12)');
     });
 
-    test('a v1 database upgraded straight to v7 keeps its session', () async {
+    test('the v7 -> v8 migration adds Messages.origin, keeps the rows, and reads them as online', () async {
+      final AppDatabase db = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+
+      await _seedCompletedSession(db);
+      await db.customStatement('ALTER TABLE messages DROP COLUMN origin');
+      await db.migration.onUpgrade(Migrator(db), 7, 8);
+
+      await _expectSessionIntact(db);
+      final List<MessageRow> rows = await db.select(db.messages).get();
+      expect(rows, isNotEmpty);
+      expect(rows.map((MessageRow r) => r.origin).toSet(), <MessageOrigin>{MessageOrigin.online});
+    });
+
+    test('a v1 database upgraded straight to v8 keeps its session', () async {
       final AppDatabase db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
 
@@ -182,7 +197,8 @@ void main() {
       await db.customStatement('ALTER TABLE sessions DROP COLUMN is_practice');
       await db.customStatement('ALTER TABLE drafts DROP COLUMN repaired');
       await db.customStatement('ALTER TABLE assessments DROP COLUMN insights_assisted');
-      await db.migration.onUpgrade(Migrator(db), 1, 7);
+      await db.customStatement('ALTER TABLE messages DROP COLUMN origin');
+      await db.migration.onUpgrade(Migrator(db), 1, 8);
 
       await _expectSessionIntact(db);
       final SessionRow session = await db.select(db.sessions).getSingle();

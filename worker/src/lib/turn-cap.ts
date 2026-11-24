@@ -90,6 +90,169 @@ export async function reserveTurn(
   };
 }
 
+export interface PlannedReservation {
+  turnIndex: number;
+  solutionRequests: number;
+}
+
+/**
+ * Pure twin of reserveTurn() for the step protocol (data-model.md §R1): the
+ * same arithmetic, no write. Throws TURN_CAP_REACHED when the planned index
+ * would exceed `cap`.
+ */
+export function planReservation(
+  counters: Pick<Counters, "turns" | "solutionRequests">,
+  cap: number,
+  claimedSolutionRequests: number,
+): PlannedReservation {
+  const turnIndex = counters.turns + 1;
+  if (turnIndex > cap) {
+    throw new AppError("TURN_CAP_REACHED");
+  }
+  const solutionRequests = Math.max(
+    counters.solutionRequests,
+    Math.min(claimedSolutionRequests, counters.solutionRequests + MAX_SOLUTION_REQUEST_INCREMENT),
+  );
+  return { turnIndex, solutionRequests };
+}
+
+interface DeviceDayRow {
+  turns: number;
+  solution_requests: number;
+  judged_at: string | null;
+  hints_revealed: number;
+  reached_keys: string | null;
+  assisted_keys: string | null;
+  named_terms: string | null;
+  last_turn_key: string | null;
+  last_turn_index: number | null;
+}
+
+const DEVICE_DAY_COLUMNS =
+  "turns, solution_requests, judged_at, hints_revealed, reached_keys, assisted_keys, named_terms, last_turn_key, last_turn_index";
+
+function toReserveResult(row: DeviceDayRow, turnIndex: number): ReserveTurnResult {
+  return {
+    turnIndex,
+    solutionRequests: row.solution_requests,
+    judgedAt: row.judged_at,
+    hintsRevealed: row.hints_revealed,
+    reachedKeys: parseStringList(row.reached_keys),
+    assistedKeys: parseStringList(row.assisted_keys),
+    namedTerms: parseStringList(row.named_terms),
+  };
+}
+
+export interface SessionState extends Counters {
+  reachedKeys: string[];
+  assistedKeys: string[];
+  namedTerms: string[];
+  lastTurnKey: string | null;
+  lastTurnIndex: number | null;
+}
+
+/** Pure read of everything a step needs about the session. Zeroes when no row exists. */
+export async function readSessionState(db: D1Database, key: TurnCounterKey): Promise<SessionState> {
+  const row = await db
+    .prepare(`SELECT ${DEVICE_DAY_COLUMNS} FROM device_day WHERE device_hash = ?1 AND problem_id = ?2 AND date = ?3`)
+    .bind(key.installId, key.problemId, key.date)
+    .first<DeviceDayRow>();
+  if (!row) {
+    return {
+      turns: 0,
+      solutionRequests: 0,
+      hintsRevealed: 0,
+      judgedAt: null,
+      reachedKeys: [],
+      assistedKeys: [],
+      namedTerms: [],
+      lastTurnKey: null,
+      lastTurnIndex: null,
+    };
+  }
+  return {
+    turns: row.turns,
+    solutionRequests: row.solution_requests,
+    hintsRevealed: row.hints_revealed,
+    judgedAt: row.judged_at,
+    reachedKeys: parseStringList(row.reached_keys),
+    assistedKeys: parseStringList(row.assisted_keys),
+    namedTerms: parseStringList(row.named_terms),
+    lastTurnKey: row.last_turn_key,
+    lastTurnIndex: row.last_turn_index,
+  };
+}
+
+/**
+ * Commits the turn the pipeline planned (data-model.md §R1). Idempotent per
+ * `turnKey`: a retry of an already-committed turn spends nothing and returns
+ * the stored index. One atomic statement, guarded so it writes only when the
+ * counter still sits where the plan assumed and below the cap; otherwise it
+ * writes nothing and decides TURN_CAP_REACHED vs STEP_DIVERGED.
+ */
+export async function commitTurn(
+  db: D1Database,
+  key: TurnCounterKey,
+  cap: number,
+  claimedSolutionRequests: number,
+  turnKey: string,
+  plannedTurnIndex: number,
+): Promise<ReserveTurnResult> {
+  const before = await readRow(db, key);
+  if (before && before.last_turn_key === turnKey && before.last_turn_index !== null) {
+    return toReserveResult(before, before.last_turn_index);
+  }
+
+  // Planned index 1 may need to create the row (an UPSERT whose conflict arm is
+  // guarded on turns = 0); any later index can only update an existing row.
+  // SQLite runs an upsert's DO UPDATE only when an INSERT row conflicts, so the
+  // two cases are two statements.
+  const advance = `turns = device_day.turns + 1,
+         solution_requests = max(
+           device_day.solution_requests,
+           min(?4, device_day.solution_requests + ${MAX_SOLUTION_REQUEST_INCREMENT})
+         ),
+         last_turn_key = ?5,
+         last_turn_index = device_day.turns + 1`;
+  const statement =
+    plannedTurnIndex === 1
+      ? `INSERT INTO device_day (device_hash, problem_id, date, turns, solution_requests, last_turn_key, last_turn_index)
+         SELECT ?1, ?2, ?3, 1, min(?4, ${MAX_SOLUTION_REQUEST_INCREMENT}), ?5, 1
+         WHERE ?6 = 1 AND ?7 >= 1
+         ON CONFLICT(device_hash, date, problem_id) DO UPDATE SET ${advance}
+         WHERE device_day.turns = ?6 - 1 AND device_day.turns < ?7
+         RETURNING ${DEVICE_DAY_COLUMNS}`
+      : `UPDATE device_day SET ${advance.replaceAll("device_day.", "")}
+         WHERE device_hash = ?1 AND problem_id = ?2 AND date = ?3 AND turns = ?6 - 1 AND turns < ?7
+         RETURNING ${DEVICE_DAY_COLUMNS}`;
+  const row = await db
+    .prepare(statement)
+    .bind(key.installId, key.problemId, key.date, claimedSolutionRequests, turnKey, plannedTurnIndex, cap)
+    .first<DeviceDayRow>();
+
+  if (row) {
+    return toReserveResult(row, row.turns);
+  }
+
+  // Nothing written. Re-read to say why.
+  const now = await readRow(db, key);
+  if (now && now.last_turn_key === turnKey && now.last_turn_index !== null) {
+    return toReserveResult(now, now.last_turn_index); // a concurrent retry committed it
+  }
+  const turns = now?.turns ?? 0;
+  if (turns !== plannedTurnIndex - 1) {
+    throw new AppError("STEP_DIVERGED");
+  }
+  throw new AppError("TURN_CAP_REACHED");
+}
+
+async function readRow(db: D1Database, key: TurnCounterKey): Promise<DeviceDayRow | null> {
+  return db
+    .prepare(`SELECT ${DEVICE_DAY_COLUMNS} FROM device_day WHERE device_hash = ?1 AND problem_id = ?2 AND date = ?3`)
+    .bind(key.installId, key.problemId, key.date)
+    .first<DeviceDayRow>();
+}
+
 /**
  * Stores the session's reached insight keys: the union of what earlier
  * turns found and what this turn's check found. Only ever grows — a word

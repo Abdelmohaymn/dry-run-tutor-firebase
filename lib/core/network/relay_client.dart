@@ -9,9 +9,8 @@ import 'dto/chat_dto.dart';
 import 'dto/config_dto.dart';
 import 'dto/error_dto.dart';
 import 'dto/install_dto.dart';
-import 'dto/judge_dto.dart';
 import 'dto/problem_dto.dart';
-import 'dto/repair_dto.dart';
+import 'dto/step_dto.dart';
 import 'dto/stt_dto.dart';
 import 'sse_parser.dart';
 
@@ -26,6 +25,17 @@ class RelayException implements Exception {
 
   @override
   String toString() => 'RelayException($error)';
+}
+
+/// `409 STEP_DIVERGED` from a `/v2/*` step POST: the answers sent no longer
+/// match what the relay would ask for (contracts/relay-steps.md). Not a
+/// [RelayError] on purpose — only `StepLoop` handles it (restart once), so the
+/// app-wide error union and its exhaustive switches stay untouched.
+class StepDivergedException implements Exception {
+  const StepDivergedException();
+
+  @override
+  String toString() => 'StepDivergedException';
 }
 
 /// The response to `GET /v1/config`: the parsed, restricted projection
@@ -168,9 +178,9 @@ class RelayClient {
     );
   }
 
-  /// `POST /v1/chat` — the streamed turn. `X-User-Key` and `X-Provider`
-  /// are sent when [userKey]/[providerId] are supplied (the keyed path);
-  /// omit both for a trial call by calling [trialChat] instead.
+  /// `POST /v1/chat` — the streamed turn. Only the (unreachable, FR-015)
+  /// provider-key check still uses it: every tutor turn, judge and repair now
+  /// goes through the step protocol ([turnStep], [judgeStep], [repairStep]).
   Stream<SseFrame> chat({
     required String installId,
     required ChatRequestDto request,
@@ -186,64 +196,45 @@ class RelayClient {
     );
   }
 
-  /// `POST /v1/judge` — one assessment, once. Same key/provider rule as
-  /// [chat].
-  Future<AssessmentDto> judge({
+  /// `POST /v2/turn` — one step of the tutor turn. [request] is the v1 chat
+  /// body; [answers] are the model answers so far, keyed by call id. Sends
+  /// `X-Install-Id` only: the relay holds no key and calls no model.
+  Future<StepResponseDto> turnStep({
     required String installId,
-    required JudgeRequestDto request,
-    String? userKey,
-    String? providerId,
-  }) async {
-    final Map<String, Object?> body = await _postJson(
-      '/v1/judge',
-      request.toJson(),
-      headers: _headers(installId: installId, userKey: userKey, providerId: providerId),
-      requestProblemId: request.problemId,
-      callKind: RelayCallKind.judge,
-    );
-    return AssessmentDto.fromJson(body);
-  }
+    required Map<String, Object?> request,
+    required Map<String, Object?> answers,
+    String? turnKey,
+  }) => _postStep(
+    '/v2/turn',
+    installId,
+    <String, Object?>{'turn_key': ?turnKey, 'request': request, 'answers': answers},
+    requestProblemId: request['problem_id'] as String? ?? '',
+  );
 
-  /// `POST /v1/repair` — transcript correction on the learner's own key or
-  /// the operator's metered trial pool when no key is available.
-  Future<RepairResponseDto> repair({
+  /// `POST /v2/judge` — one step of the assessment.
+  Future<StepResponseDto> judgeStep({
     required String installId,
-    required RepairRequestDto request,
-    String? userKey,
-    String? providerId,
-  }) async {
-    final Map<String, Object?> body = await _postJson(
-      '/v1/repair',
-      request.toJson(),
-      headers: _headers(installId: installId, userKey: userKey, providerId: providerId),
-      requestProblemId: request.problemId,
-    );
-    return RepairResponseDto.fromJson(body);
-  }
+    required Map<String, Object?> request,
+    required Map<String, Object?> answers,
+  }) => _postStep(
+    '/v2/judge',
+    installId,
+    <String, Object?>{'request': request, 'answers': answers},
+    requestProblemId: request['problem_id'] as String? ?? '',
+    callKind: RelayCallKind.judge,
+  );
 
-  /// `POST /v1/trial`, mode=chat. **Never** sends `X-User-Key` or
-  /// `X-Provider` — this path spends the operator's credential
-  /// (contracts/relay-client.md).
-  Stream<SseFrame> trialChat({required String installId, required ChatRequestDto request}) {
-    final Map<String, Object?> body = <String, Object?>{...request.toJson(), 'mode': 'chat'};
-    return _streamedTurn('/v1/trial', body, installId: installId);
-  }
-
-  /// `POST /v1/trial`, mode=judge.
-  Future<AssessmentDto> trialJudge({
+  /// `POST /v2/repair` — one step of a transcript repair.
+  Future<StepResponseDto> repairStep({
     required String installId,
-    required JudgeRequestDto request,
-  }) async {
-    final Map<String, Object?> body = <String, Object?>{...request.toJson(), 'mode': 'judge'};
-    final Map<String, Object?> response = await _postJson(
-      '/v1/trial',
-      body,
-      headers: _headers(installId: installId),
-      requestProblemId: request.problemId,
-      callKind: RelayCallKind.judge,
-    );
-    return AssessmentDto.fromJson(response);
-  }
+    required Map<String, Object?> request,
+    required Map<String, Object?> answers,
+  }) => _postStep(
+    '/v2/repair',
+    installId,
+    <String, Object?>{'request': request, 'answers': answers},
+    requestProblemId: request['problem_id'] as String? ?? '',
+  );
 
   /// `POST /v1/stt` — one recorded clip, transcribed server-side on the
   /// operator's Groq key. Sends `X-Install-Id` only: **never** `X-User-Key`
@@ -323,6 +314,45 @@ class RelayClient {
         _mapTransportOrEnvelope(e, requestProblemId: requestProblemId, callKind: callKind),
       );
     }
+  }
+
+  Future<StepResponseDto> _postStep(
+    String path,
+    String installId,
+    Map<String, Object?> body, {
+    String requestProblemId = '',
+    RelayCallKind callKind = RelayCallKind.chat,
+  }) async {
+    try {
+      final Response<Map<String, dynamic>> response = await _dio.post<Map<String, dynamic>>(
+        path,
+        data: body,
+        options: Options(headers: _headers(installId: installId)),
+      );
+      return StepResponseDto.fromJson(response.data ?? const <String, dynamic>{});
+    } on DioException catch (e) {
+      if (_errorCodeOf(e) == 'STEP_DIVERGED') {
+        throw const StepDivergedException();
+      }
+      throw RelayException(_mapTransportOrEnvelope(e, requestProblemId: requestProblemId, callKind: callKind));
+    } on FormatException {
+      // A 200 that is not a step response is the relay's fault, not the learner's.
+      throw const RelayException(RelayError.badRequest());
+    }
+  }
+
+  String? _errorCodeOf(DioException e) {
+    Object? data = e.response?.data;
+    if (data is String && data.isNotEmpty) {
+      try {
+        data = jsonDecode(data);
+      } on FormatException {
+        return null;
+      }
+    }
+    final Object? error = data is Map ? data['error'] : null;
+    final Object? code = error is Map ? error['code'] : null;
+    return code is String ? code : null;
   }
 
   Stream<SseFrame> _streamedTurn(

@@ -20,6 +20,7 @@ class ChatRequestDto {
     this.solutionRequestCount,
     this.keyCheck,
     this.finishOfferDismissed,
+    this.offlineNote,
   });
 
   factory ChatRequestDto.fromJson(Map<String, dynamic> json) => _$ChatRequestDtoFromJson(json);
@@ -48,6 +49,10 @@ class ChatRequestDto {
   /// The learner chose Keep going on the finish offer; the relay runs no
   /// finish check for the rest of the session (feature 005).
   final bool? finishOfferDismissed;
+
+  /// What the learner said to the offline tutor since the last online turn,
+  /// quoted (≤ 600 chars). `/v2/turn` shows it to the tutor call only.
+  final String? offlineNote;
 
   Map<String, dynamic> toJson() => _$ChatRequestDtoToJson(this);
 }

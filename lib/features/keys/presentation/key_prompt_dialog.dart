@@ -52,6 +52,9 @@ KeyPromptReason? keyPromptReasonFor(RelayError error) => switch (error) {
       EmptyTurn() => null,
       ProblemKilled() => null,
       BadRequest() => null,
+      ClientUnverified() => null,
+      OfflineTutorDownloading() => null,
+      OfflineTutorBusy() => null,
       TransportFailure() => null,
     };
 

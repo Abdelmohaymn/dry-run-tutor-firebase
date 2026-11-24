@@ -21,7 +21,7 @@ import type { Problem } from "../../../tools/problem-types";
 export const JUDGE_CONVERSATION_PLACEHOLDER = "It is in the user message below, one turn per line.";
 
 /** The "Settled insights" block the judge model is shown (judge prompt v7). */
-function renderSettled(problem: Problem, reached: readonly string[], assisted: readonly string[]): string {
+export function renderSettled(problem: Problem, reached: readonly string[], assisted: readonly string[]): string {
   const list = (keys: readonly string[]) => (keys.length > 0 ? keys.join(", ") : "none");
   const rest = problem.private.key_insights.map((i) => i.key).filter((k) => !reached.includes(k) && !assisted.includes(k));
   return [
@@ -32,7 +32,7 @@ function renderSettled(problem: Problem, reached: readonly string[], assisted: r
   ].join("\n");
 }
 
-function renderConversation(turns: Turn[]): string {
+export function renderConversation(turns: Turn[]): string {
   return turns.map((t) => `${t.role}: ${t.text}`).join("\n");
 }
 

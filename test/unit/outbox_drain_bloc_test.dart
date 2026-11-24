@@ -10,7 +10,6 @@ import 'package:dry_run/core/network/dto/chat_dto.dart';
 import 'package:dry_run/core/network/dto/judge_dto.dart';
 import 'package:dry_run/core/network/dto/turn_dto.dart';
 import 'package:dry_run/core/network/relay_client.dart' show RelayException;
-import 'package:dry_run/core/network/sse_parser.dart';
 import 'package:dry_run/core/queue/outbox_drain_bloc.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:drift/drift.dart' show Value;
@@ -21,6 +20,7 @@ import 'package:mocktail/mocktail.dart';
 import '../fakes/fake_outbox_repository.dart';
 import '../fakes/fake_trusted_time_source.dart';
 import '../fakes/mock_relay_client.dart';
+import '../fakes/step_fakes.dart';
 
 class _MockConnectivity extends Mock implements Connectivity {}
 
@@ -31,10 +31,7 @@ void main() {
   late FakeOutboxRepository outboxRepository;
 
   setUpAll(() {
-    registerFallbackValue(ChatRequestDto(problemId: 'vp-0001', messages: const <TurnDto>[]));
-    registerFallbackValue(
-      JudgeRequestDto(problemId: 'vp-0001', conversation: const <TurnDto>[], endedBy: 'cap'),
-    );
+    registerStepFallbacks();
   });
 
   setUp(() async {
@@ -80,7 +77,7 @@ void main() {
       assessmentDao: db.assessmentDao,
       timeSource: timeSource,
       resolveInstallId: () async => 'install-1',
-      resolveKeyedHeaders: (SessionRow session) async => (null, null),
+      stepLoop: fakeStepLoop(),
       connectivity: connectivity,
     );
   }
@@ -110,13 +107,11 @@ void main() {
         );
 
     final List<String> callOrder = <String>[];
-    when(() => relayClient.trialChat(installId: any(named: 'installId'), request: any(named: 'request')))
-        .thenAnswer((_) async* {
+    whenTurnStep(relayClient).thenAnswer((_) async {
       callOrder.add('chat-start');
       await Future<void>.delayed(const Duration(milliseconds: 30));
       callOrder.add('chat-end');
-      yield const TokenFrame('ok');
-      yield const MetaFrame(<String, Object?>{
+      return doneTurn('ok', <String, Object?>{
         'turn_index': 1,
         'turns_remaining': 3,
         'hints_revealed': 0,
@@ -125,10 +120,9 @@ void main() {
         'leak_blocked': false,
       });
     });
-    when(() => relayClient.trialJudge(installId: any(named: 'installId'), request: any(named: 'request')))
-        .thenAnswer((_) async {
+    whenJudgeStep(relayClient).thenAnswer((_) async {
       callOrder.add('judge-start');
-      return AssessmentDto(
+      return doneJudge(AssessmentDto(
         matchedApproach: 'none',
         matchedVerdict: 'none',
         insightsHit: const <String>[],
@@ -146,7 +140,7 @@ void main() {
         confidence: 0.5,
         feedback: 'ok',
         editorial: 'ok',
-      );
+      ).toJson());
     });
 
     await outboxRepository.enqueue(
@@ -204,20 +198,16 @@ void main() {
           );
 
       ChatRequestDto? captured;
-      when(() => relayClient.trialChat(installId: any(named: 'installId'), request: any(named: 'request')))
-          .thenAnswer((Invocation invocation) {
-        captured = invocation.namedArguments[#request] as ChatRequestDto;
-        return Stream<SseFrame>.fromIterable(<SseFrame>[
-          const TokenFrame('ok'),
-          const MetaFrame(<String, Object?>{
-            'turn_index': 3,
-            'turns_remaining': 1,
-            'hints_revealed': 0,
-            'hints_remaining': 0,
-            'session_ended': 'solution',
-            'leak_blocked': false,
-          }),
-        ]);
+      whenTurnStep(relayClient).thenAnswer((Invocation invocation) async {
+        captured = ChatRequestDto.fromJson(invocation.namedArguments[#request] as Map<String, Object?>);
+        return doneTurn('ok', <String, Object?>{
+          'turn_index': 3,
+          'turns_remaining': 1,
+          'hints_revealed': 0,
+          'hints_remaining': 0,
+          'session_ended': 'solution',
+          'leak_blocked': false,
+        });
       });
 
       // This row was built back when the session's own count was still
@@ -265,8 +255,7 @@ void main() {
               startedAt: timeSource.utc,
             ),
           );
-      when(() => relayClient.trialJudge(installId: any(named: 'installId'), request: any(named: 'request')))
-          .thenThrow(
+      whenJudgeStep(relayClient).thenThrow(
         const RelayException(RelayError.sessionAlreadyJudged(ctx: JudgedContext.repeatJudge)),
       );
 
@@ -284,8 +273,13 @@ void main() {
       bloc.add(const DrainRequested());
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      verify(() => relayClient.trialJudge(installId: any(named: 'installId'), request: any(named: 'request')))
-          .called(1);
+      verify(
+        () => relayClient.judgeStep(
+          installId: any(named: 'installId'),
+          request: any(named: 'request'),
+          answers: any(named: 'answers'),
+        ),
+      ).called(1);
       expect(outboxRepository.enqueued, isEmpty, reason: 'row removed, not parked for a year');
       expect((await db.sessionDao.byId('s3'))!.status, SessionStatus.pendingJudge);
       expect(await db.assessmentDao.forSession('s3'), isNull);

@@ -1,0 +1,130 @@
+{
+  "type": "object",
+  "required": [
+    "approach_quote",
+    "matched_approach",
+    "matched_verdict",
+    "insights_hit",
+    "insights_missed",
+    "wrong_turns_taken",
+    "complexity",
+    "verdict",
+    "confidence",
+    "feedback"
+  ],
+  "properties": {
+    "approach_quote": {
+      "type": "string"
+    },
+    "matched_approach": {
+      "type": "string",
+      "enum": [
+        "single_scan",
+        "sort_take_last",
+        "first_element",
+        "none"
+      ]
+    },
+    "matched_verdict": {
+      "type": "string",
+      "enum": [
+        "optimal",
+        "acceptable",
+        "suboptimal",
+        "wrong",
+        "none"
+      ]
+    },
+    "insights_hit": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "quote",
+          "key"
+        ],
+        "properties": {
+          "quote": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "enum": [
+              "one_pass_enough"
+            ]
+          }
+        }
+      }
+    },
+    "insights_missed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "one_pass_enough"
+        ]
+      }
+    },
+    "wrong_turns_taken": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "sort_first",
+          "first_element"
+        ]
+      }
+    },
+    "complexity": {
+      "type": "object",
+      "required": [
+        "user_claimed_time",
+        "user_claimed_space",
+        "reference_time",
+        "reference_space",
+        "assessment"
+      ],
+      "properties": {
+        "user_claimed_time": {
+          "type": "string",
+          "nullable": true
+        },
+        "user_claimed_space": {
+          "type": "string",
+          "nullable": true
+        },
+        "reference_time": {
+          "type": "string"
+        },
+        "reference_space": {
+          "type": "string"
+        },
+        "assessment": {
+          "type": "string",
+          "enum": [
+            "correct",
+            "mismatched",
+            "not_stated"
+          ]
+        }
+      }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "strong_pass",
+        "pass",
+        "borderline",
+        "likely_tle",
+        "incorrect",
+        "unclear"
+      ]
+    },
+    "confidence": {
+      "type": "number"
+    },
+    "feedback": {
+      "type": "string"
+    }
+  }
+}

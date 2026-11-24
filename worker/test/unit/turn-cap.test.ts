@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { AppError } from "../../src/lib/errors";
 import {
   claimJudge,
+  commitTurn,
+  planReservation,
+  readSessionState,
   readCounters,
   recordAssistedKeys,
   recordNamedTerms,
@@ -225,5 +228,72 @@ describe("assisted_keys", () => {
       .bind(key.installId)
       .first<{ assisted_keys: string | null }>();
     expect(row!.assisted_keys).toBeNull();
+  });
+});
+
+describe("planReservation()", () => {
+  it("matches reserveTurn() on every step of a session, including the solution-request clamp", async () => {
+    for (const claims of [[0, 0, 0], [99, 99, 99], [2, 2, 2], [0, 5, 0]]) {
+      const key = freshKey();
+      for (const claimed of claims) {
+        const planned = planReservation(await readCounters(env.DB, key), 15, claimed);
+        const real = await reserveTurn(env.DB, key, 15, claimed);
+        expect(planned).toEqual({ turnIndex: real.turnIndex, solutionRequests: real.solutionRequests });
+      }
+    }
+  });
+
+  it("throws TURN_CAP_REACHED when the planned index passes the cap", () => {
+    expect(() => planReservation({ turns: 3, solutionRequests: 0 }, 3, 0)).toThrowError(AppError);
+    expect(() => planReservation({ turns: 2, solutionRequests: 0 }, 3, 0)).not.toThrow();
+  });
+});
+
+describe("commitTurn()", () => {
+  it("is idempotent per turn_key: twice spends one turn and returns the same index", async () => {
+    const key = freshKey();
+    const a = await commitTurn(env.DB, key, 15, 0, "turn-a", 1);
+    const b = await commitTurn(env.DB, key, 15, 0, "turn-a", 1);
+    expect(a.turnIndex).toBe(1);
+    expect(b.turnIndex).toBe(1);
+    expect((await readCounters(env.DB, key)).turns).toBe(1);
+    const state = await readSessionState(env.DB, key);
+    expect(state.lastTurnKey).toBe("turn-a");
+    expect(state.lastTurnIndex).toBe(1);
+  });
+
+  it("commits successive turns with the arithmetic of reserveTurn()", async () => {
+    const key = freshKey();
+    const t1 = await commitTurn(env.DB, key, 15, 99, "t1", 1);
+    expect(t1.solutionRequests).toBe(1);
+    const t2 = await commitTurn(env.DB, key, 15, 99, "t2", 2);
+    expect(t2.turnIndex).toBe(2);
+    expect(t2.solutionRequests).toBe(2);
+  });
+
+  it("a wrong planned index is STEP_DIVERGED and writes nothing", async () => {
+    const key = freshKey();
+    await commitTurn(env.DB, key, 15, 0, "t1", 1);
+    await expectAppError(commitTurn(env.DB, key, 15, 0, "t-stale", 1), "STEP_DIVERGED");
+    await expectAppError(commitTurn(env.DB, key, 15, 0, "t-ahead", 5), "STEP_DIVERGED");
+    expect((await readCounters(env.DB, key)).turns).toBe(1);
+  });
+
+  it("at the cap it is TURN_CAP_REACHED and writes nothing", async () => {
+    const key = freshKey();
+    await commitTurn(env.DB, key, 2, 0, "t1", 1);
+    await commitTurn(env.DB, key, 2, 0, "t2", 2);
+    await expectAppError(commitTurn(env.DB, key, 2, 0, "t3", 3), "TURN_CAP_REACHED");
+    expect((await readCounters(env.DB, key)).turns).toBe(2);
+  });
+
+  it("two commits racing for the same planned index: one wins, the other diverges", async () => {
+    const key = freshKey();
+    const results = await Promise.allSettled([
+      commitTurn(env.DB, key, 15, 0, "x", 1),
+      commitTurn(env.DB, key, 15, 0, "y", 1),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled").length).toBe(1);
+    expect((await readCounters(env.DB, key)).turns).toBe(1);
   });
 });

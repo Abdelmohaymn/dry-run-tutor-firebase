@@ -997,6 +997,13 @@ class DailySessionCubit extends Cubit<DailySessionState> {
             emit(DailySessionState.streaming(session, partial));
           case TurnEventMeta(:final counters):
             _onTurnMeta(session: session, counters: counters);
+          case TurnEventOfflineReply():
+            // The on-device tutor answered (feature 010). The reply row arrives
+            // through the message stream; the counters, the finish offer and the
+            // cap are exactly as they were, because the relay never saw this turn.
+            _pendingSendText = null;
+            _pendingSendMode = null;
+            emit(DailySessionState.composing(session, null));
         }
       }
     } on MissingMetaFailure {

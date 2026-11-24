@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:get_it/get_it.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../features/assessment/data/assessment_repository_impl.dart';
 import '../../features/assessment/domain/assessment_repository.dart';
 import '../../features/chat/data/session_repository_impl.dart';
+import '../../features/chat/data/offline_tutor.dart';
+import '../../features/chat/data/step_loop.dart';
 import '../../features/chat/domain/session_repository.dart';
 import '../../features/cloud_voice/data/audio_recorder_port.dart';
 import '../../features/cloud_voice/data/cloud_voice_repository_impl.dart';
@@ -35,11 +39,16 @@ import '../../features/voice/data/spoken_language_repository_impl.dart';
 import '../../features/voice/domain/mic_rationale_repository.dart';
 import '../../features/voice/domain/recognition_service.dart';
 import '../../features/voice/domain/spoken_language_repository.dart';
+import '../l10n/generated/app_localizations.dart';
+import '../ai/debug_model_gateway.dart';
+import '../ai/firebase_model_gateway.dart';
+import '../ai/model_gateway.dart';
+import '../ai/on_device_model.dart';
+import '../ai/on_device_model_service.dart';
 import '../config/remote_config_repository.dart';
 import '../db/app_database.dart';
 import '../device/device_id_platform.dart';
 import '../errors/result.dart';
-import '../models/wire_enums.dart';
 import '../network/dio_client.dart';
 import '../network/relay_client.dart';
 import '../notifications/notification_service.dart';
@@ -92,6 +101,30 @@ Future<void> setupLocator() async {
         buildDioClient(onServerDate: sl<TrustedTimeSourceImpl>().onServerDate),
   );
   sl.registerLazySingleton<RelayClient>(() => RelayClient(sl<Dio>()));
+  // Firebase entry (feature 010): model calls go through Firebase AI Logic.
+  sl.registerLazySingleton<ModelGateway>(() {
+    final ModelGateway gateway = FirebaseModelGateway();
+    // The debug-only "Simulate cloud rate limit" switch (Settings) wraps it; compiled out of release.
+    return kDebugMode ? DebugModelGateway(gateway) : gateway;
+  });
+  sl.registerLazySingleton<StepLoop>(() => StepLoop(sl<ModelGateway>()));
+  // Gemini Nano through Firebase AI Logic hybrid inference, on-device half (feature 010).
+  sl.registerLazySingleton<OnDeviceModel>(ChannelOnDeviceModel.new);
+  sl.registerLazySingleton<OnDeviceModelService>(
+    () => OnDeviceModelService(
+      model: sl<OnDeviceModel>(),
+      isOnline: () async {
+        final List<ConnectivityResult> results = await Connectivity().checkConnectivity();
+        return results.any((ConnectivityResult r) => r != ConnectivityResult.none);
+      },
+    ),
+  );
+  sl.registerLazySingleton<OfflineTutor>(
+    () => OfflineTutor(
+      model: sl<OnDeviceModel>(),
+      fallbackLine: () => lookupAppLocalizations(PlatformDispatcher.instance.locale).offlineTutorFallbackLine,
+    ),
+  );
 
   sl.registerLazySingleton<RemoteConfigRepository>(
     () => RemoteConfigRepositoryImpl(
@@ -172,18 +205,19 @@ Future<void> setupLocator() async {
       streakDao: sl<AppDatabase>().streakDao,
       problemRepository: sl<ProblemRepository>(),
       dailyRepository: sl<DailyRepository>(),
-      configRepository: sl<RemoteConfigRepository>(),
-      keyRepository: sl<KeyRepository>(),
       installRepository: sl<InstallRepository>(),
       timeSource: sl<TrustedTimeSource>(),
       outboxRepository: sl<OutboxRepository>(),
+      stepLoop: sl<StepLoop>(),
+      offlineTutor: sl<OfflineTutor>(),
+      onDeviceService: sl<OnDeviceModelService>(),
     ),
   );
   sl.registerLazySingleton<TranscriptRepairRepository>(
     () => TranscriptRepairRepositoryImpl(
       relayClient: sl<RelayClient>(),
-      keyRepository: sl<KeyRepository>(),
       installRepository: sl<InstallRepository>(),
+      stepLoop: sl<StepLoop>(),
     ),
   );
   sl.registerLazySingleton<AssessmentRepository>(
@@ -192,11 +226,10 @@ Future<void> setupLocator() async {
       assessmentDao: sl<AppDatabase>().assessmentDao,
       sessionDao: sl<AppDatabase>().sessionDao,
       messageDao: sl<AppDatabase>().messageDao,
-      configRepository: sl<RemoteConfigRepository>(),
-      keyRepository: sl<KeyRepository>(),
       installRepository: sl<InstallRepository>(),
       timeSource: sl<TrustedTimeSource>(),
       outboxRepository: sl<OutboxRepository>(),
+      stepLoop: sl<StepLoop>(),
     ),
   );
   sl.registerLazySingleton<SpokenLanguageRepository>(
@@ -246,18 +279,16 @@ Future<void> setupLocator() async {
           ),
         };
       },
-      resolveKeyedHeaders: (session) async {
-        if (session.path != SessionPath.keyed) {
-          return (null, null);
-        }
-        final key = await sl<KeyRepository>().read();
-        return (key?.value, key?.providerId ?? session.providerId);
-      },
+      stepLoop: sl<StepLoop>(),
       notificationService: sl<NotificationService>(),
     ),
   );
 
   await sl.allReady();
+
+  // Reads whether Gemini Nano is on the phone (and starts the one-time download
+  // when it is not yet, online). Never blocks startup and never throws.
+  unawaited(sl<OnDeviceModelService>().start());
 
   // Delete clips left behind by a crash or a kill mid-upload. Fire and
   // forget; `sweepOrphanClips` swallows its own errors, and the resolve is

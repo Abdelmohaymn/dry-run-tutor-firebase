@@ -12,7 +12,6 @@ import 'package:dry_run/core/errors/relay_error.dart';
 import 'package:dry_run/core/models/wire_enums.dart';
 import 'package:dry_run/core/network/dto/chat_dto.dart';
 import 'package:dry_run/core/network/relay_client.dart';
-import 'package:dry_run/core/network/sse_parser.dart';
 import 'package:dry_run/features/chat/data/session_repository_impl.dart';
 import 'package:dry_run/features/chat/domain/session.dart';
 import 'package:dry_run/features/daily/data/daily_repository_impl.dart';
@@ -24,10 +23,10 @@ import 'package:mocktail/mocktail.dart';
 
 import '../fakes/fake_config_repository.dart';
 import '../fakes/fake_install_repository.dart';
-import '../fakes/fake_key_repository.dart';
 import '../fakes/fake_outbox_repository.dart';
 import '../fakes/fake_trusted_time_source.dart';
 import '../fakes/mock_relay_client.dart';
+import '../fakes/step_fakes.dart';
 
 const RuntimeConfig _config = RuntimeConfig(
   minSupportedVersion: '1.0.0',
@@ -104,23 +103,17 @@ class _Harness {
         configRepository: configRepository,
         timeSource: timeSource,
       ),
-      configRepository: configRepository,
-      keyRepository: FakeKeyRepository(),
       installRepository: FakeInstallRepository(),
       outboxRepository: FakeOutboxRepository(),
       timeSource: timeSource,
+      stepLoop: fakeStepLoop(),
     );
     final _Harness h = _Harness(db, repository, relayClient);
-    when(() => relayClient.trialChat(installId: any(named: 'installId'), request: any(named: 'request')))
-        .thenAnswer((Invocation invocation) {
-      h.sent.add(invocation.namedArguments[#request] as ChatRequestDto);
+    whenTurnStep(relayClient).thenAnswer((Invocation invocation) async {
+      h.sent.add(ChatRequestDto.fromJson(invocation.namedArguments[#request] as Map<String, Object?>));
       final Object reply = h.replies.removeAt(0);
-      if (reply is RelayException) return Stream<SseFrame>.error(reply);
-      return Stream<SseFrame>.fromIterable(<SseFrame>[
-        TokenFrame('reply ${h.sent.length}'),
-        MetaFrame(reply as Map<String, Object?>),
-        const DoneFrame(),
-      ]);
+      if (reply is RelayException) throw reply;
+      return doneTurn('reply ${h.sent.length}', reply as Map<String, Object?>);
     });
     return h;
   }
@@ -139,6 +132,7 @@ class _Harness {
 void main() {
   setUpAll(() {
     registerFallbackValue(ChatRequestDto(problemId: 'vp-0001', messages: const []));
+    registerStepFallbacks();
   });
 
   test('only the first summary_covers replayed turns are dropped; the rest are sent again', () async {

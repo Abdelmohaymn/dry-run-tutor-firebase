@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
 
-import '../../../core/config/remote_config_repository.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/db/dao/assessment_dao.dart';
 import '../../../core/db/dao/message_dao.dart';
@@ -17,8 +16,7 @@ import '../../../core/queue/outbox_repository.dart';
 import '../../../core/time/trusted_time_source.dart';
 import '../../chat/domain/ended_by.dart';
 import '../../chat/domain/session.dart';
-import '../../keys/domain/key_repository.dart';
-import '../../keys/domain/learner_key.dart';
+import '../../chat/data/step_loop.dart';
 import '../../onboarding/domain/install_identity.dart';
 import '../../onboarding/domain/install_repository.dart';
 import '../domain/assessment.dart';
@@ -35,37 +33,32 @@ class AssessmentRepositoryImpl implements AssessmentRepository {
     required AssessmentDao assessmentDao,
     required SessionDao sessionDao,
     required MessageDao messageDao,
-    required RemoteConfigRepository configRepository,
-    required KeyRepository keyRepository,
     required InstallRepository installRepository,
     required TrustedTimeSource timeSource,
     required OutboxRepository outboxRepository,
+    required StepLoop stepLoop,
   })  : _relayClient = relayClient,
         _assessmentDao = assessmentDao,
         _sessionDao = sessionDao,
         _messageDao = messageDao,
-        _configRepository = configRepository,
-        _keyRepository = keyRepository,
         _installRepository = installRepository,
         _timeSource = timeSource,
-        _outboxRepository = outboxRepository;
+        _outboxRepository = outboxRepository,
+        _stepLoop = stepLoop;
 
   final RelayClient _relayClient;
   final AssessmentDao _assessmentDao;
   final SessionDao _sessionDao;
   final MessageDao _messageDao;
-  final RemoteConfigRepository _configRepository;
-  final KeyRepository _keyRepository;
   final InstallRepository _installRepository;
   final TrustedTimeSource _timeSource;
   final OutboxRepository _outboxRepository;
+  final StepLoop _stepLoop;
 
   @override
   Future<Result<Assessment>> request(Session session) async {
     JudgeRequestDto? request;
     late final String installId;
-    late final String? userKey;
-    late final String? providerId;
     try {
       installId = await _resolvedInstallId();
       final EndedBy endedBy = endedByFromSessionEnded(session.counters.sessionEnded);
@@ -79,16 +72,8 @@ class AssessmentRepositoryImpl implements AssessmentRepository {
         // second argument a caller could pass inconsistently.
         revealAtIndex: endedBy == EndedBy.solution ? session.counters.turnIndex : null,
       );
-      (userKey, providerId) = await _keyedHeaders(session);
 
-      final AssessmentDto dto = session.path == SessionPath.trial
-          ? await _relayClient.trialJudge(installId: installId, request: request)
-          : await _relayClient.judge(
-              installId: installId,
-              request: request,
-              userKey: userKey,
-              providerId: providerId,
-            );
+      final AssessmentDto dto = await _judge(installId, request);
 
       final Assessment assessment = _toDomain(session.id, dto, revealAtIndex: request.revealAtIndex);
       await _persist(assessment, rawJson: jsonEncode(dto.toJson()));
@@ -114,8 +99,6 @@ class AssessmentRepositoryImpl implements AssessmentRepository {
           session: session,
           installId: installId,
           request: request,
-          userKey: userKey,
-          providerId: providerId,
         );
       }
       // FR-042's queueing extends to the judge call: the request never
@@ -148,19 +131,10 @@ class AssessmentRepositoryImpl implements AssessmentRepository {
     required Session session,
     required String installId,
     required JudgeRequestDto request,
-    required String? userKey,
-    required String? providerId,
   }) async {
     try {
       await _relayClient.recoverJudge(installId: installId, problemId: session.problem.id);
-      final AssessmentDto dto = session.path == SessionPath.trial
-          ? await _relayClient.trialJudge(installId: installId, request: request)
-          : await _relayClient.judge(
-              installId: installId,
-              request: request,
-              userKey: userKey,
-              providerId: providerId,
-            );
+      final AssessmentDto dto = await _judge(installId, request);
       final Assessment recovered = _toDomain(session.id, dto, revealAtIndex: request.revealAtIndex);
       await _persist(recovered, rawJson: jsonEncode(dto.toJson()));
       return Ok(recovered);
@@ -213,24 +187,30 @@ class AssessmentRepositoryImpl implements AssessmentRepository {
   Future<List<TurnDto>> _buildConversation(String sessionId) async {
     final List<MessageRow> all = await _messageDao.forSession(sessionId);
     final List<MessageRow> turnsOnly =
-        all.where((MessageRow m) => m.kind == MessageKind.turn).toList(growable: false);
+        all.where((MessageRow m) => m.kind == MessageKind.turn && m.origin == MessageOrigin.online).toList(growable: false);
     final List<MessageRow> capped = turnsOnly.length > _maxJudgeMessages
         ? turnsOnly.sublist(turnsOnly.length - _maxJudgeMessages)
         : turnsOnly;
     return capped.map((MessageRow m) => TurnDto(role: m.role.name, text: m.body)).toList();
   }
 
-  Future<(String?, String?)> _keyedHeaders(Session session) async {
-    if (session.path != SessionPath.keyed) {
-      return (null, null);
+  /// One assessment over the relay step loop (contracts/relay-steps.md).
+  Future<AssessmentDto> _judge(String installId, JudgeRequestDto request) async {
+    final Map<String, Object?> requestJson = request.toJson();
+    final Map<String, Object?> done;
+    try {
+      done = await _stepLoop.run(
+        (Map<String, Object?> answers) =>
+            _relayClient.judgeStep(installId: installId, request: requestJson, answers: answers),
+      );
+    } on ModelCallFailed catch (e) {
+      throw e.toRelayException();
     }
-    final LearnerKey? key = await _keyRepository.read();
-    final String? providerId = key?.providerId ?? session.providerId;
-    final config = _configRepository.cached() ?? await _configRepository.load();
-    if (providerId != null && !config.keyedProviders.contains(providerId)) {
-      throw const RelayException(RelayError.invalidKey());
+    final Object? assessment = done['assessment'];
+    if (assessment is! Map) {
+      throw const RelayException(RelayError.unclearRetry());
     }
-    return (key?.value, providerId);
+    return AssessmentDto.fromJson(Map<String, dynamic>.from(assessment));
   }
 
   Future<void> _persist(Assessment assessment, {required String rawJson}) async {

@@ -4,6 +4,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../features/chat/data/step_loop.dart';
 import '../db/app_database.dart';
 import '../db/dao/assessment_dao.dart';
 import '../db/dao/message_dao.dart';
@@ -13,7 +14,7 @@ import '../models/wire_enums.dart';
 import '../network/dto/chat_dto.dart';
 import '../network/dto/judge_dto.dart';
 import '../network/relay_client.dart';
-import '../network/sse_parser.dart';
+import '../network/sse_parser.dart' show MissingMetaFailure;
 import '../notifications/notification_service.dart';
 import '../time/trusted_time_source.dart';
 import 'outbox_drain_state.dart';
@@ -45,7 +46,7 @@ class OutboxDrainBloc extends Bloc<OutboxDrainEvent, OutboxDrainState> {
     required AssessmentDao assessmentDao,
     required TrustedTimeSource timeSource,
     required Future<String> Function() resolveInstallId,
-    required Future<(String?, String?)> Function(SessionRow session) resolveKeyedHeaders,
+    required StepLoop stepLoop,
     NotificationService? notificationService,
     Connectivity? connectivity,
   })  : _outboxRepository = outboxRepository,
@@ -55,7 +56,7 @@ class OutboxDrainBloc extends Bloc<OutboxDrainEvent, OutboxDrainState> {
         _assessmentDao = assessmentDao,
         _timeSource = timeSource,
         _resolveInstallId = resolveInstallId,
-        _resolveKeyedHeaders = resolveKeyedHeaders,
+        _stepLoop = stepLoop,
         _notificationService = notificationService,
         super(const OutboxIdle()) {
     on<DrainRequested>(_onDrainRequested, transformer: (events, mapper) => events.asyncExpand(mapper));
@@ -73,7 +74,7 @@ class OutboxDrainBloc extends Bloc<OutboxDrainEvent, OutboxDrainState> {
   final AssessmentDao _assessmentDao;
   final TrustedTimeSource _timeSource;
   final Future<String> Function() _resolveInstallId;
-  final Future<(String?, String?)> Function(SessionRow session) _resolveKeyedHeaders;
+  final StepLoop _stepLoop;
   final NotificationService? _notificationService;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
@@ -158,26 +159,36 @@ class OutboxDrainBloc extends Bloc<OutboxDrainEvent, OutboxDrainState> {
         earlierLearnerTurns: request.earlierLearnerTurns,
         hintRequested: request.hintRequested,
         solutionRequestCount: session.solutionRequestCount,
+        finishOfferDismissed: request.finishOfferDismissed,
+        offlineNote: request.offlineNote,
       );
     }
 
     final String installId = await _resolveInstallId();
-    final (String? userKey, String? providerId) = await _resolveKeyedHeaders(session);
     final String userMessageId = item.payload['user_message_id'] as String;
 
-    final Stream<SseFrame> frames = session.path == SessionPath.trial
-        ? _relayClient.trialChat(installId: installId, request: request)
-        : _relayClient.chat(installId: installId, request: request, userKey: userKey, providerId: providerId);
-
-    MetaFrameDto? meta;
-    await for (final SseFrame frame in frames) {
-      if (frame is MetaFrame) {
-        meta = MetaFrameDto.fromJson(frame.rawJson);
-      }
+    // The queued request is replayed through the same step loop as a live
+    // turn; the user message's id is its turn key, so a turn the relay already
+    // committed is not spent twice.
+    final Map<String, Object?> turnJson = request.toJson();
+    final Map<String, Object?> done;
+    try {
+      done = await _stepLoop.run(
+        (Map<String, Object?> answers) => _relayClient.turnStep(
+          installId: installId,
+          turnKey: userMessageId,
+          request: turnJson,
+          answers: answers,
+        ),
+      );
+    } on ModelCallFailed catch (e) {
+      throw e.toRelayException();
     }
-    if (meta == null) {
+    final Object? metaJson = done['meta'];
+    if (metaJson is! Map) {
       throw const MissingMetaFailure();
     }
+    final MetaFrameDto meta = MetaFrameDto.fromJson(Map<String, dynamic>.from(metaJson));
 
     await _messageDao.markDelivery(userMessageId, Delivery.sent);
     final SessionRow? current = await _sessionDao.byId(session.id);
@@ -199,11 +210,22 @@ class OutboxDrainBloc extends Bloc<OutboxDrainEvent, OutboxDrainState> {
     final Map<String, Object?> requestJson = item.payload['request'] as Map<String, Object?>;
     final JudgeRequestDto request = JudgeRequestDto.fromJson(requestJson);
     final String installId = await _resolveInstallId();
-    final (String? userKey, String? providerId) = await _resolveKeyedHeaders(session);
 
-    final AssessmentDto dto = session.path == SessionPath.trial
-        ? await _relayClient.trialJudge(installId: installId, request: request)
-        : await _relayClient.judge(installId: installId, request: request, userKey: userKey, providerId: providerId);
+    final Map<String, Object?> judgeJson = request.toJson();
+    final Map<String, Object?> done;
+    try {
+      done = await _stepLoop.run(
+        (Map<String, Object?> answers) =>
+            _relayClient.judgeStep(installId: installId, request: judgeJson, answers: answers),
+      );
+    } on ModelCallFailed catch (e) {
+      throw e.toRelayException();
+    }
+    final Object? assessmentJson = done['assessment'];
+    if (assessmentJson is! Map) {
+      throw const RelayException(RelayError.unclearRetry());
+    }
+    final AssessmentDto dto = AssessmentDto.fromJson(Map<String, dynamic>.from(assessmentJson));
 
     final DateTime receivedAt = (await _timeSource.now()).utc;
     await _assessmentDao.upsert(
@@ -279,6 +301,16 @@ class OutboxDrainBloc extends Bloc<OutboxDrainEvent, OutboxDrainState> {
         // assessment" button runs that recovery. Parking the row for a year
         // only left a dead entry behind.
         await _outboxRepository.remove(item.id);
+      case OfflineTutorDownloading() || OfflineTutorBusy():
+        // Never queued: these only arise on the offline path, which sends nothing.
+        break;
+      case ClientUnverified():
+        // This build cannot be attested; waiting will not change that.
+        await _outboxRepository.markAttempted(
+          id: item.id,
+          nextEligibleAt: now.add(const Duration(days: 365)),
+          lastErrorCode: 'CLIENT_UNVERIFIED',
+        );
       case TransportFailure():
         // Never reached the relay at all — leave the row exactly as
         // it is; the next connectivity change tries again.

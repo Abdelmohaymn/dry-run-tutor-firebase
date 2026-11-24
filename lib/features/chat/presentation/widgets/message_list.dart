@@ -136,6 +136,7 @@ class _MessageListState extends State<MessageList> {
             hintCount: widget.hintCount,
             exampleIndex: exampleOrdinalByMessageId[message.id],
             exampleCount: widget.exampleCount,
+            offline: message.origin == MessageOrigin.offline,
           );
         },
       ),
@@ -182,6 +183,7 @@ class _MessageBubble extends StatelessWidget {
     this.hintCount = 0,
     this.exampleIndex,
     this.exampleCount = 0,
+    this.offline = false,
   });
 
   final TurnRole role;
@@ -194,6 +196,10 @@ class _MessageBubble extends StatelessWidget {
   final int? exampleIndex;
   final int exampleCount;
 
+  /// The exchange the on-device tutor answered (feature 010, FR-010): labelled
+  /// plainly, so the learner always knows which tutor they are talking to.
+  final bool offline;
+
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context)!;
@@ -202,6 +208,8 @@ class _MessageBubble extends StatelessWidget {
       MessageKind.hintRung when hintIndex != null => l10n.hintMessageLabel(hintIndex!, hintCount),
       MessageKind.example when exampleIndex != null => l10n.exampleMessageLabel(exampleIndex!, exampleCount),
       MessageKind.ladderExhausted => l10n.hintLadderExhaustedLabel,
+      _ when offline && isUser => '${l10n.messageListYouLabel} · ${l10n.offlineTutorYouLabel}',
+      _ when offline => l10n.offlineTutorLabel,
       _ => isUser ? l10n.messageListYouLabel : l10n.messageListTutorLabel,
     };
     return Align(

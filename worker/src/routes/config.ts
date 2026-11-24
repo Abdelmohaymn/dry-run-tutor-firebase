@@ -18,8 +18,9 @@ configRoute.get("/", async (c) => {
   // by GET /v1/daily (006). The app has no use for either, so neither leaves
   // the Worker in this payload. `voice.model` (feature 008) is the Worker's
   // own STT model choice, so it is dropped from the `voice` block too; an
-  // absent `voice` stays absent (voice off).
-  const { web: _web, rotation: _rotation, voice, ...rest } = cfg;
+  // absent `voice` stays absent (voice off). `gemini` (model ids and call
+  // settings) travels inside each step call, never up front.
+  const { web: _web, rotation: _rotation, gemini: _gemini, voice, ...rest } = cfg;
   const appCfg = voice
     ? {
         ...rest,

@@ -133,6 +133,18 @@ ErrorCopy resolveErrorCopy(AppLocalizations l10n, RelayError error) {
         l10n.errBadRequest,
         ErrorNextAction.retryOrUpdateApp,
       ),
+    OfflineTutorDownloading() => (
+        l10n.errOfflineTutorDownloading,
+        ErrorNextAction.retryWhenOnline,
+      ),
+    OfflineTutorBusy() => (
+        l10n.errOfflineTutorBusy,
+        ErrorNextAction.retryWhenOnline,
+      ),
+    ClientUnverified() => (
+        l10n.errClientUnverified,
+        ErrorNextAction.retryOrUpdateApp,
+      ),
     TransportFailure() => (
         l10n.errOfflineQueued,
         ErrorNextAction.retryWhenOnline,

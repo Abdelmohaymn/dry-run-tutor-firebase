@@ -74,18 +74,19 @@ export default defineWorkersConfig(async () => {
 
   const poolOptions = {
     workers: {
-      wrangler: { configPath: "./wrangler.jsonc", environment: "dev" },
+      wrangler: { configPath: "./wrangler.jsonc", environment: "firebase" },
       miniflare: {
         bindings: { TEST_MIGRATIONS: migrations, EXPECTED_PROMPTS: expectedPrompts, WORKER_SOURCE: workerSource },
       },
     },
   };
 
-  // The harness project alone additionally needs a real learner key. Like
-  // everything else on this page, the Workers test runtime cannot read
-  // process.env directly (no host environment access), so it is injected
-  // as a binding here, at config-build time — real Node — from whatever
-  // GROQ_API_KEY is set when `npm run test:harness` invokes vitest.
+  // The harness project alone additionally needs a real Gemini key. The
+  // Workers test runtime cannot read process.env directly (no host
+  // environment access), so it is injected as a binding here, at config-build
+  // time — real Node — from whatever GEMINI_API_KEY is set when
+  // `npm run test:harness:gemini` invokes vitest. GEMINI_MODEL_FLASH /
+  // GEMINI_MODEL_LITE optionally override the model ids under test.
   const harnessPoolOptions = {
     workers: {
       ...poolOptions.workers,
@@ -93,16 +94,9 @@ export default defineWorkersConfig(async () => {
         ...poolOptions.workers.miniflare,
         bindings: {
           ...poolOptions.workers.miniflare.bindings,
-          GROQ_API_KEY: process.env.GROQ_API_KEY ?? "",
-          // Optional: run the harness against a different configured
-          // provider/model than whatever's seeded in config,
-          // without editing the migration's seed row. Set both to switch;
-          // leave unset and the seeded default (groq) is used as normal.
-          HARNESS_PROVIDER: process.env.HARNESS_PROVIDER ?? "",
-          HARNESS_MODEL: process.env.HARNESS_MODEL ?? "",
-          // JSON, e.g. {"chat_template_kwargs":{"enable_thinking":false}} for
-          // Nemotron: the structured-call body production sends (review F2).
-          HARNESS_STRUCTURED_EXTRA_BODY: process.env.HARNESS_STRUCTURED_EXTRA_BODY ?? "",
+          GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "",
+          GEMINI_MODEL_FLASH: process.env.GEMINI_MODEL_FLASH ?? "",
+          GEMINI_MODEL_LITE: process.env.GEMINI_MODEL_LITE ?? "",
         },
       },
     },
@@ -131,14 +125,12 @@ export default defineWorkersConfig(async () => {
         defineWorkersProject({
           test: {
             name: "harness",
-            include: ["test/harness/**/*.test.ts"],
+            include: ["test/harness/**/*.gemini.harness.test.ts"],
             setupFiles: ["./test/apply-migrations.ts"],
             poolOptions: harnessPoolOptions,
-            // Live provider calls, plus this project's own rate-limit
-            // retry/backoff (live-client.ts, judge.harness.test.ts) — the
-            // 5s default is far too tight once a retry is in flight, and a
-            // judge call's own retry_after_ms can itself run to 20s+ on a
-            // heavily-used key.
+            // Live Gemini calls through the step loop, plus its own rate-limit
+            // retry/backoff (gemini-app-client.ts) — the 5s default is far too
+            // tight once a retry is in flight.
             testTimeout: 60000,
           },
         }),

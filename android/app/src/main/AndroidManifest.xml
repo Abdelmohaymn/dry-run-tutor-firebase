@@ -19,6 +19,10 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false">
+
+        <!-- FR-016: no analytics. Firebase AI Logic and App Check only. -->
+
+        <meta-data android:name="firebase_analytics_collection_deactivated" android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

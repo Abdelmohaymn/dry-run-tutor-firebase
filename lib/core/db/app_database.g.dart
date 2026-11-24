@@ -2455,6 +2455,16 @@ class $MessagesTable extends Messages
     ),
     defaultValue: const Constant(false),
   );
+  @override
+  late final GeneratedColumnWithTypeConverter<MessageOrigin, String> origin =
+      GeneratedColumn<String>(
+        'origin',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: Constant(MessageOrigin.online.name),
+      ).withConverter<MessageOrigin>($MessagesTable.$converterorigin);
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -2478,6 +2488,7 @@ class $MessagesTable extends Messages
     recognisedDraft,
     inputMode,
     coveredBySummary,
+    origin,
     createdAt,
   ];
   @override
@@ -2604,6 +2615,12 @@ class $MessagesTable extends Messages
         DriftSqlType.bool,
         data['${effectivePrefix}covered_by_summary'],
       )!,
+      origin: $MessagesTable.$converterorigin.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}origin'],
+        )!,
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -2626,6 +2643,8 @@ class $MessagesTable extends Messages
       const EnumNameConverter<InputMode>(InputMode.values);
   static JsonTypeConverter2<InputMode?, String?, String?> $converterinputModen =
       JsonTypeConverter2.asNullable($converterinputMode);
+  static JsonTypeConverter2<MessageOrigin, String, String> $converterorigin =
+      const EnumNameConverter<MessageOrigin>(MessageOrigin.values);
 }
 
 class MessageRow extends DataClass implements Insertable<MessageRow> {
@@ -2639,6 +2658,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
   final String? recognisedDraft;
   final InputMode? inputMode;
   final bool coveredBySummary;
+  final MessageOrigin origin;
   final DateTime createdAt;
   const MessageRow({
     required this.id,
@@ -2651,6 +2671,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
     this.recognisedDraft,
     this.inputMode,
     required this.coveredBySummary,
+    required this.origin,
     required this.createdAt,
   });
   @override
@@ -2680,6 +2701,11 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
       );
     }
     map['covered_by_summary'] = Variable<bool>(coveredBySummary);
+    {
+      map['origin'] = Variable<String>(
+        $MessagesTable.$converterorigin.toSql(origin),
+      );
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -2700,6 +2726,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
           ? const Value.absent()
           : Value(inputMode),
       coveredBySummary: Value(coveredBySummary),
+      origin: Value(origin),
       createdAt: Value(createdAt),
     );
   }
@@ -2728,6 +2755,9 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
         serializer.fromJson<String?>(json['inputMode']),
       ),
       coveredBySummary: serializer.fromJson<bool>(json['coveredBySummary']),
+      origin: $MessagesTable.$converterorigin.fromJson(
+        serializer.fromJson<String>(json['origin']),
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -2753,6 +2783,9 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
         $MessagesTable.$converterinputModen.toJson(inputMode),
       ),
       'coveredBySummary': serializer.toJson<bool>(coveredBySummary),
+      'origin': serializer.toJson<String>(
+        $MessagesTable.$converterorigin.toJson(origin),
+      ),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
@@ -2768,6 +2801,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
     Value<String?> recognisedDraft = const Value.absent(),
     Value<InputMode?> inputMode = const Value.absent(),
     bool? coveredBySummary,
+    MessageOrigin? origin,
     DateTime? createdAt,
   }) => MessageRow(
     id: id ?? this.id,
@@ -2782,6 +2816,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
         : this.recognisedDraft,
     inputMode: inputMode.present ? inputMode.value : this.inputMode,
     coveredBySummary: coveredBySummary ?? this.coveredBySummary,
+    origin: origin ?? this.origin,
     createdAt: createdAt ?? this.createdAt,
   );
   MessageRow copyWithCompanion(MessagesCompanion data) {
@@ -2800,6 +2835,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
       coveredBySummary: data.coveredBySummary.present
           ? data.coveredBySummary.value
           : this.coveredBySummary,
+      origin: data.origin.present ? data.origin.value : this.origin,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -2817,6 +2853,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
           ..write('recognisedDraft: $recognisedDraft, ')
           ..write('inputMode: $inputMode, ')
           ..write('coveredBySummary: $coveredBySummary, ')
+          ..write('origin: $origin, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -2834,6 +2871,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
     recognisedDraft,
     inputMode,
     coveredBySummary,
+    origin,
     createdAt,
   );
   @override
@@ -2850,6 +2888,7 @@ class MessageRow extends DataClass implements Insertable<MessageRow> {
           other.recognisedDraft == this.recognisedDraft &&
           other.inputMode == this.inputMode &&
           other.coveredBySummary == this.coveredBySummary &&
+          other.origin == this.origin &&
           other.createdAt == this.createdAt);
 }
 
@@ -2864,6 +2903,7 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
   final Value<String?> recognisedDraft;
   final Value<InputMode?> inputMode;
   final Value<bool> coveredBySummary;
+  final Value<MessageOrigin> origin;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
   const MessagesCompanion({
@@ -2877,6 +2917,7 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
     this.recognisedDraft = const Value.absent(),
     this.inputMode = const Value.absent(),
     this.coveredBySummary = const Value.absent(),
+    this.origin = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -2891,6 +2932,7 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
     this.recognisedDraft = const Value.absent(),
     this.inputMode = const Value.absent(),
     this.coveredBySummary = const Value.absent(),
+    this.origin = const Value.absent(),
     required DateTime createdAt,
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -2912,6 +2954,7 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
     Expression<String>? recognisedDraft,
     Expression<String>? inputMode,
     Expression<bool>? coveredBySummary,
+    Expression<String>? origin,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
   }) {
@@ -2926,6 +2969,7 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
       if (recognisedDraft != null) 'recognised_draft': recognisedDraft,
       if (inputMode != null) 'input_mode': inputMode,
       if (coveredBySummary != null) 'covered_by_summary': coveredBySummary,
+      if (origin != null) 'origin': origin,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -2942,6 +2986,7 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
     Value<String?>? recognisedDraft,
     Value<InputMode?>? inputMode,
     Value<bool>? coveredBySummary,
+    Value<MessageOrigin>? origin,
     Value<DateTime>? createdAt,
     Value<int>? rowid,
   }) {
@@ -2956,6 +3001,7 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
       recognisedDraft: recognisedDraft ?? this.recognisedDraft,
       inputMode: inputMode ?? this.inputMode,
       coveredBySummary: coveredBySummary ?? this.coveredBySummary,
+      origin: origin ?? this.origin,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -3002,6 +3048,11 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
     if (coveredBySummary.present) {
       map['covered_by_summary'] = Variable<bool>(coveredBySummary.value);
     }
+    if (origin.present) {
+      map['origin'] = Variable<String>(
+        $MessagesTable.$converterorigin.toSql(origin.value),
+      );
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -3024,6 +3075,7 @@ class MessagesCompanion extends UpdateCompanion<MessageRow> {
           ..write('recognisedDraft: $recognisedDraft, ')
           ..write('inputMode: $inputMode, ')
           ..write('coveredBySummary: $coveredBySummary, ')
+          ..write('origin: $origin, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -7259,6 +7311,7 @@ typedef $$MessagesTableCreateCompanionBuilder =
       Value<String?> recognisedDraft,
       Value<InputMode?> inputMode,
       Value<bool> coveredBySummary,
+      Value<MessageOrigin> origin,
       required DateTime createdAt,
       Value<int> rowid,
     });
@@ -7274,6 +7327,7 @@ typedef $$MessagesTableUpdateCompanionBuilder =
       Value<String?> recognisedDraft,
       Value<InputMode?> inputMode,
       Value<bool> coveredBySummary,
+      Value<MessageOrigin> origin,
       Value<DateTime> createdAt,
       Value<int> rowid,
     });
@@ -7356,6 +7410,12 @@ class $$MessagesTableFilterComposer
   ColumnFilters<bool> get coveredBySummary => $composableBuilder(
     column: $table.coveredBySummary,
     builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<MessageOrigin, MessageOrigin, String>
+  get origin => $composableBuilder(
+    column: $table.origin,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
   );
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
@@ -7441,6 +7501,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get origin => $composableBuilder(
+    column: $table.origin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -7510,6 +7575,9 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumnWithTypeConverter<MessageOrigin, String> get origin =>
+      $composableBuilder(column: $table.origin, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -7575,6 +7643,7 @@ class $$MessagesTableTableManager
                 Value<String?> recognisedDraft = const Value.absent(),
                 Value<InputMode?> inputMode = const Value.absent(),
                 Value<bool> coveredBySummary = const Value.absent(),
+                Value<MessageOrigin> origin = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion(
@@ -7588,6 +7657,7 @@ class $$MessagesTableTableManager
                 recognisedDraft: recognisedDraft,
                 inputMode: inputMode,
                 coveredBySummary: coveredBySummary,
+                origin: origin,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -7603,6 +7673,7 @@ class $$MessagesTableTableManager
                 Value<String?> recognisedDraft = const Value.absent(),
                 Value<InputMode?> inputMode = const Value.absent(),
                 Value<bool> coveredBySummary = const Value.absent(),
+                Value<MessageOrigin> origin = const Value.absent(),
                 required DateTime createdAt,
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion.insert(
@@ -7616,6 +7687,7 @@ class $$MessagesTableTableManager
                 recognisedDraft: recognisedDraft,
                 inputMode: inputMode,
                 coveredBySummary: coveredBySummary,
+                origin: origin,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
