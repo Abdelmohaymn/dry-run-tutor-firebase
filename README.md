@@ -20,7 +20,7 @@ phone is offline or the cloud model is rate-limited.
 | | |
 |---|---|
 | Android APK | [Latest release](https://github.com/Abdelmohaymn/dry-run-tutor-firebase/releases/latest): `dry-run-firebase-1.0.0-arm64.apk` (24 MB) for almost every phone; `-armv7.apk` only for old 32-bit phones |
-| Demo video | Linked from the submission |
+| Demo video | https://youtu.be/Ruwn6CVef2U (2:57) |
 
 Android phones only. **No API key, account or payment needed**, and no daily limit: you can redo a
 problem or pick another as often as you like. Install the APK (allow installs from unknown
