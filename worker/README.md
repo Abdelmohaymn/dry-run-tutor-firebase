@@ -168,4 +168,10 @@ Seed the config row once. The `gemini` block is required (no model id is compile
 npx wrangler d1 execute dry-run-tutor-firebase --env firebase --remote --command "UPDATE config SET payload = json_set(payload, '\$.gemini', json('{\"models\":{\"tutor\":\"<flash id>\",\"rewrite\":\"<flash id>\",\"judge\":\"<flash id>\",\"progress\":\"<lite id>\",\"evidence\":\"<lite id>\",\"condense\":\"<lite id>\",\"repair\":\"<lite id>\"},\"thinking_budget\":{\"tutor\":0,\"rewrite\":0,\"judge\":null,\"default\":0},\"timeout_ms\":{\"tutor\":20000,\"judge\":30000,\"default\":12000},\"temperature\":{\"tutor\":0.4,\"rewrite\":0.4,\"default\":0},\"max_output_tokens\":{\"tutor\":400,\"rewrite\":400,\"judge\":2000,\"default\":1000}}')), updated_at = datetime('now') WHERE id = 1"
 ```
 
+Turn voice on too (the migrations' seed row has no `voice` block, so `POST /v1/stt` answers 503 until this runs):
+
+```sh
+npx wrangler d1 execute dry-run-tutor-firebase --env firebase --remote --command "UPDATE config SET payload = json_set(payload, '\$.voice', json('{\"enabled\":true,\"seconds_per_device\":1200,\"max_clip_seconds\":120}')), updated_at = datetime('now') WHERE id = 1"
+```
+
 Model ids, thinking budgets and timeouts are levers: change them in D1 with no redeploy, and the app uses the new values on its next call. `GET /v1/config` never serves the `gemini` block.

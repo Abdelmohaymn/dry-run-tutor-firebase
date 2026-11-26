@@ -26,7 +26,7 @@
           "binding": "DB",
           // Owner pastes the id from `npx wrangler d1 create dry-run-tutor-firebase`.
           "database_name": "dry-run-tutor-firebase",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "5fe2b620-15dd-4417-bfce-a9f75f36b021",
           "migrations_dir": "migrations"
         }
       ],

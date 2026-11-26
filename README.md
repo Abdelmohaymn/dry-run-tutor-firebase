@@ -28,6 +28,9 @@ sources when Android asks), skip or finish the short welcome walkthrough, tap th
 through your approach (English). When you are done, tap **End session**, then **Finish**, for
 your assessment ("How it went") and the full write-up.
 
+**If you see a "busy" or "try again" message**: the cloud model runs on Gemini's free tier,
+shared by everyone testing the app. Wait about a minute and send again; your words are kept.
+
 ### See the offline tutor
 
 1. Open a problem and have one normal turn, so the model download can start (it needs Wi-Fi or
@@ -41,8 +44,11 @@ and offline turns behave as they always did: your words are kept and sent when y
 online. Nano needs a supported phone (Pixel 9 and later, recent Galaxy S and a few others, Android
 8+ with AICore).
 
-**Emulators and rooted phones**: App Check (Play Integrity) cannot vouch for them, so the app
-says *"This build can't reach the tutor."* Use a real, unmodified phone.
+**App Check and the APK**: the release APK is installed outside Google Play, and Play Integrity
+rejects any build Play did not install ("App attestation failed"). So the judging APK attests with
+App Check's debug provider and a token registered in the Firebase console, built in at compile
+time and never committed. App Check is still enforced on every Firebase AI Logic call; the token
+is revoked after judging.
 
 ## How it uses Firebase AI Logic
 
@@ -123,7 +129,9 @@ Pass `--dart-define=RELAY_BASE_URL=https://...` to point a build at another work
 (Flutter 3.44.1, pinned in `.fvmrc`). Debug builds need an App Check debug token:
 `--dart-define=APP_CHECK_DEBUG_TOKEN=...` (register it in the Firebase console; never commit it).
 `lib/core/config/brand.dart` holds the product name and every identifier derived from it.
-Release builds use `android/key.properties` if present, otherwise the debug key.
+Release builds use `android/key.properties` if present, otherwise the debug key. A release build
+given `APP_CHECK_DEBUG_TOKEN` uses the debug provider (this is how the judging APK is built, since
+it is sideloaded); without it, a release build attests with Play Integrity.
 
 ## Tests
 

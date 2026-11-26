@@ -119,14 +119,16 @@ Future<void> main() async {
 }
 
 /// Firebase AI Logic is the model transport on this entry; App Check is what
-/// stops anything but this app calling it. Release builds attest with Play
-/// Integrity. Debug builds use the debug provider, with a registered token
-/// passed as `--dart-define=APP_CHECK_DEBUG_TOKEN=...` (never committed).
+/// stops anything but this app calling it. A build given a registered token
+/// (`--dart-define=APP_CHECK_DEBUG_TOKEN=...`, never committed) uses the debug
+/// provider, release or not: the judges' APK is sideloaded, and Play Integrity
+/// rejects any build Google Play did not install ("App attestation failed").
+/// A release build without a token attests with Play Integrity.
 Future<void> _initFirebase() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   const String debugToken = String.fromEnvironment('APP_CHECK_DEBUG_TOKEN');
   await FirebaseAppCheck.instance.activate(
-    providerAndroid: kReleaseMode
+    providerAndroid: kReleaseMode && debugToken.isEmpty
         ? const AndroidPlayIntegrityProvider()
         : AndroidDebugProvider(debugToken: debugToken.isEmpty ? null : debugToken),
   );
