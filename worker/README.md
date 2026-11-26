@@ -174,4 +174,6 @@ Turn voice on too (the migrations' seed row has no `voice` block, so `POST /v1/s
 npx wrangler d1 execute dry-run-tutor-firebase --env firebase --remote --command "UPDATE config SET payload = json_set(payload, '\$.voice', json('{\"enabled\":true,\"seconds_per_device\":1200,\"max_clip_seconds\":120}')), updated_at = datetime('now') WHERE id = 1"
 ```
 
+Flash-Lite models reject a thinking budget ("Request contains an invalid argument"): with a lite model, set `thinking_budget` to `{"default":null}` so the app sends none. The live relay runs every purpose on `gemini-3.5-flash-lite` that way.
+
 Model ids, thinking budgets and timeouts are levers: change them in D1 with no redeploy, and the app uses the new values on its next call. `GET /v1/config` never serves the `gemini` block.

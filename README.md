@@ -19,7 +19,7 @@ phone is offline or the cloud model is rate-limited.
 
 | | |
 |---|---|
-| Android APK | [Latest release](https://github.com/Abdelmohaymn/dry-run-tutor-firebase/releases/latest) |
+| Android APK | [Latest release](https://github.com/Abdelmohaymn/dry-run-tutor-firebase/releases/latest): `dry-run-firebase-1.0.0-arm64.apk` (24 MB) for almost every phone; `-armv7.apk` only for old 32-bit phones |
 | Demo video | Linked from the submission |
 
 Android phones only. **No API key, account or payment needed**, and no daily limit: you can redo a
@@ -54,9 +54,14 @@ is revoked after judging.
 
 | Where | Model | What it does |
 |---|---|---|
-| Cloud, called from the app with `firebase_ai`, App Check on | Gemini (Flash for the tutor, rewrite and judge; Flash-Lite for the checks) | Tutor replies, the progress and evidence checks, the judge, condensing long history, transcript repair |
+| Cloud, called from the app with `firebase_ai`, App Check on | Gemini Flash-Lite (`gemini-3.5-flash-lite`, free tier) | Tutor replies, the judge and its evidence check, condensing long history, transcript repair |
 | On the phone, `firebase-ai-ondevice`, `ONLY_ON_DEVICE` | Gemini Nano | The offline tutor: one short question about your approach, from the public problem statement only. It has no answer to leak and gives no verdict |
 | The relay (Cloudflare Worker) | none | Holds the prompts and each problem's private half, enforces the turn cap, filters leaks, post-processes the judge. It holds no model key and calls no model |
+
+**The model is configuration, not code.** The model per purpose, timeouts, temperature and
+thinking budget live in the relay's database and reach the app with each call. Switching models
+(during testing a preview model returned "high demand" errors and another hit its free-tier
+limit) is one database update, with no new APK.
 
 **How a turn works.** The relay still runs the whole tutor and judge pipeline, but it cannot call
 a model. When it needs one it answers `status: model` with the calls it wants made; the app runs
@@ -115,7 +120,6 @@ order of `git log`:
 | `worker/src/prompts/` | Tutor, judge, progress check (`finish-check.ts`), evidence check, condense and repair prompts |
 | `content/problems/` | Four sample problems, `public`/`private` split. The live app serves more; they are kept out of the repo so their answers stay private |
 | `specs/` | Wire and design contracts the code and tests read |
-| `hackathon/` | Judging plan, demo video source and submission notes |
 
 ## Running it
 
